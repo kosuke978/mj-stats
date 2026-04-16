@@ -1,0 +1,96 @@
+{
+  "info": {
+    "name": "MJ-Stats API",
+    "description": "MJ-Stats backend API test collection",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json",
+    "_postman_id": "3a515ecb-86f1-49f5-8ef8-e9742e2c77b5"
+  },
+  "item": [
+    {
+      "name": "0. Health Check",
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": {
+          "raw": "{{base_url}}/api/health",
+          "host": [
+            "{{base_url}}"
+          ],
+          "path": [
+            "api",
+            "health"
+          ]
+        }
+      }
+    },
+    {
+      "name": "1. Calculate Match Points",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"players\": [\n    {\"player_id\": \"user_1\", \"raw_score\": 35000},\n    {\"player_id\": \"user_2\", \"raw_score\": 28000},\n    {\"player_id\": \"user_3\", \"raw_score\": 22000},\n    {\"player_id\": \"user_4\", \"raw_score\": 15000}\n  ]\n}",
+          "options": {
+            "raw": {
+              "language": "json"
+            }
+          }
+        },
+        "url": {
+          "raw": "{{base_url}}/api/matches/calculate",
+          "host": [
+            "{{base_url}}"
+          ],
+          "path": [
+            "api",
+            "matches",
+            "calculate"
+          ]
+        }
+      }
+    },
+    {
+      "name": "2. Create Match",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"rule_id\": \"YOUR_RULE_UUID\",\n  \"season_id\": null,\n  \"results\": [\n    {\"player_id\": \"user_1\", \"raw_score\": 35000, \"point\": 45.0, \"rank\": 1, \"is_yakuman\": false},\n    {\"player_id\": \"user_2\", \"raw_score\": 28000, \"point\": 8.0, \"rank\": 2, \"is_yakuman\": false},\n    {\"player_id\": \"user_3\", \"raw_score\": 22000, \"point\": -18.0, \"rank\": 3, \"is_yakuman\": false},\n    {\"player_id\": \"user_4\", \"raw_score\": 15000, \"point\": -35.0, \"rank\": 4, \"is_yakuman\": false}\n  ]\n}",
+          "options": {
+            "raw": {
+              "language": "json"
+            }
+          }
+        },
+        "url": {
+          "raw": "{{base_url}}/api/matches",
+          "host": [
+            "{{base_url}}"
+          ],
+          "path": [
+            "api",
+            "matches"
+          ]
+        }
+      }
+    }
+  ],
+  "variable": [
+    {
+      "key": "base_url",
+      "value": "http://localhost:8080"
+    }
+  ]
+}
