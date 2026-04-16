@@ -1,44 +1,40 @@
 package main
 
 import (
-	"context"
+	"database/sql"
 	"log"
 	"net/http"
 	"os"
 
 	"github.com/gin-contrib/cors"
 	"github.com/gin-gonic/gin"
-	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/joho/godotenv"
+	"github.com/kosuke/mj-stats-api/controllers"
+	"github.com/kosuke/mj-stats-api/db"
 )
 
 func main() {
-	// .envの読み込み
 	if err := godotenv.Load(); err != nil {
 		log.Println("No .env file found, using system environment variables")
 	}
 
-	// データベース接続プールの作成
-	dbURL := os.Getenv("DATABASE_URL")
-	if dbURL == "" {
-		log.Fatal("DATABASE_URL environment variable is not set")
-	}
-
-	dbPool, err := pgxpool.New(context.Background(), dbURL)
+	database, err := db.NewDB()
 	if err != nil {
-		log.Fatalf("Unable to connect to database: %v\n", err)
+		log.Fatalf("Unable to connect to database: %v", err)
 	}
-	defer dbPool.Close()
+	defer func(database *sql.DB) {
+		if closeErr := database.Close(); closeErr != nil {
+			log.Printf("failed to close database: %v", closeErr)
+		}
+	}(database)
+
+	matchController := controllers.NewMatchController(database)
 
 	r := gin.Default()
-
-	// CORS設定（Next.jsフロントエンドからのアクセスを許可）
 	r.Use(cors.Default())
 
-	// DB接続確認を含むヘルスチェックAPI
 	r.GET("/api/health", func(c *gin.Context) {
-		err := dbPool.Ping(context.Background())
-		if err != nil {
+		if err := database.Ping(); err != nil {
 			c.JSON(http.StatusInternalServerError, gin.H{
 				"status":  "error",
 				"message": "Database connection failed",
@@ -52,6 +48,9 @@ func main() {
 			"message": "MJ-Stats API & DB are running successfully",
 		})
 	})
+
+	r.POST("/api/matches/calculate", matchController.Calculate)
+	r.POST("/api/matches", matchController.CreateMatch)
 
 	port := os.Getenv("PORT")
 	if port == "" {

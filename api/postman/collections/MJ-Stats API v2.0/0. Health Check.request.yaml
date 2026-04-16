@@ -1,0 +1,5 @@
+$kind: http-request
+name: 0. Health Check
+url: http://localhost:8080/api/health
+method: GET
+order: 500

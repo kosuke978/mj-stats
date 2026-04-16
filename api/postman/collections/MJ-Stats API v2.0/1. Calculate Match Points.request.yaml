@@ -1,0 +1,18 @@
+$kind: http-request
+name: 1. Calculate Match Points
+url: http://localhost:8080/api/matches/calculate
+method: POST
+headers:
+  Content-Type: application/json
+body:
+  type: text
+  content: |-
+    {
+      "players": [
+        {"player_id": "user_1", "raw_score": 35000},
+        {"player_id": "user_2", "raw_score": 28000},
+        {"player_id": "user_3", "raw_score": 22000},
+        {"player_id": "user_4", "raw_score": 15000}
+      ]
+    }
+order: 1000
