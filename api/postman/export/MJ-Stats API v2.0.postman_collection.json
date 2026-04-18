@@ -1,0 +1,124 @@
+{
+  "info": {
+    "name": "MJ-Stats API v2.0",
+    "description": "MJ-Stats API endpoint collection",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "item": [
+    {
+      "name": "0. Health Check",
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": {
+          "raw": "http://localhost:8080/api/health",
+          "protocol": "http",
+          "host": [
+            "localhost"
+          ],
+          "port": "8080",
+          "path": [
+            "api",
+            "health"
+          ]
+        }
+      },
+      "response": []
+    },
+    {
+      "name": "1. Calculate Match Points",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"players\": [\n    {\"player_id\": \"user_1\", \"raw_score\": 35000},\n    {\"player_id\": \"user_2\", \"raw_score\": 28000},\n    {\"player_id\": \"user_3\", \"raw_score\": 22000},\n    {\"player_id\": \"user_4\", \"raw_score\": 15000}\n  ]\n}",
+          "options": {
+            "raw": {
+              "language": "json"
+            }
+          }
+        },
+        "url": {
+          "raw": "http://localhost:8080/api/matches/calculate",
+          "protocol": "http",
+          "host": [
+            "localhost"
+          ],
+          "port": "8080",
+          "path": [
+            "api",
+            "matches",
+            "calculate"
+          ]
+        }
+      },
+      "response": []
+    },
+    {
+      "name": "2. Create Match",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"rule_id\": \"99999999-9999-9999-9999-999999999999\",\n  \"season_id\": null,\n  \"results\": [\n    {\"player_id\":\"11111111-1111-1111-1111-111111111111\",\"raw_score\":35000,\"point\":45.0,\"rank\":1,\"is_yakuman\":false},\n    {\"player_id\":\"22222222-2222-2222-2222-222222222222\",\"raw_score\":28000,\"point\":8.0,\"rank\":2,\"is_yakuman\":false},\n    {\"player_id\":\"33333333-3333-3333-3333-333333333333\",\"raw_score\":22000,\"point\":-18.0,\"rank\":3,\"is_yakuman\":false},\n    {\"player_id\":\"44444444-4444-4444-4444-444444444444\",\"raw_score\":15000,\"point\":-35.0,\"rank\":4,\"is_yakuman\":false}\n  ]\n}",
+          "options": {
+            "raw": {
+              "language": "json"
+            }
+          }
+        },
+        "url": {
+          "raw": "http://localhost:8080/api/matches",
+          "protocol": "http",
+          "host": [
+            "localhost"
+          ],
+          "port": "8080",
+          "path": [
+            "api",
+            "matches"
+          ]
+        }
+      },
+      "response": []
+    },
+    {
+      "name": "3. Get Matches",
+      "request": {
+        "method": "GET",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "url": {
+          "raw": "http://localhost:8080/api/matches",
+          "protocol": "http",
+          "host": [
+            "localhost"
+          ],
+          "port": "8080",
+          "path": [
+            "api",
+            "matches"
+          ]
+        },
+        "description": "対局履歴一覧を取得します。"
+      },
+      "response": []
+    }
+  ]
+}

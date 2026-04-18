@@ -1,0 +1,7 @@
+$kind: http-request
+description: 対局履歴一覧を取得します。
+url: http://localhost:8080/api/matches
+method: GET
+headers:
+  Content-Type: application/json
+order: 4000

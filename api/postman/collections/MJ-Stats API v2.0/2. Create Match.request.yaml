@@ -1,5 +1,4 @@
 $kind: http-request
-name: 2. Create Match
 url: http://localhost:8080/api/matches
 method: POST
 headers:
@@ -17,4 +16,4 @@ body:
         {"player_id":"44444444-4444-4444-4444-444444444444","raw_score":15000,"point":-35.0,"rank":4,"is_yakuman":false}
       ]
     }
-order: 2000
+order: 3000

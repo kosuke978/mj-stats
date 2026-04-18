@@ -1,4 +1,4 @@
 $kind: http-request
-url: http://localhost:8080/api/health
+url: http://localhost:8080/api/matches
 method: GET
 order: 1000
