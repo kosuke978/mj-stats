@@ -1,0 +1,4 @@
+$kind: collection
+description: MJ-Stats backend API test collection
+variables:
+  base_url: http://localhost:8080

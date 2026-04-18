@@ -1,0 +1,19 @@
+$kind: http-request
+url: "{{base_url}}/api/matches"
+method: POST
+headers:
+  Content-Type: application/json
+body:
+  type: json
+  content: >-
+    {
+      "rule_id": "YOUR_RULE_UUID",
+      "season_id": null,
+      "results": [
+        {"player_id": "user_1", "raw_score": 35000, "point": 45.0, "rank": 1, "is_yakuman": false},
+        {"player_id": "user_2", "raw_score": 28000, "point": 8.0, "rank": 2, "is_yakuman": false},
+        {"player_id": "user_3", "raw_score": 22000, "point": -18.0, "rank": 3, "is_yakuman": false},
+        {"player_id": "user_4", "raw_score": 15000, "point": -35.0, "rank": 4, "is_yakuman": false}
+      ]
+    }
+order: 3000

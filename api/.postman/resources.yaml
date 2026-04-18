@@ -6,7 +6,8 @@ workspace:
 
 cloudResources:
   collections:
-    ../postman/collections/MJ-Stats API v2.0: a1b2c3d4-e5f6-7890-1234-567890abcdef
+    ../postman/collections/MJ-Stats API v2.0: 68e070fc-e04b-44f4-9839-f016876f7a3c
+    ../postman/collections/Get Matches Collection: 954cccbf-c685-43e9-ade7-e367a0efe131
 
 # All resources in the `postman/` folder are automatically registered in Local View.
 # Point to additional files outside the `postman/` folder to register them individually. Example:

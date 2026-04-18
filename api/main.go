@@ -51,6 +51,7 @@ func main() {
 
 	r.POST("/api/matches/calculate", matchController.Calculate)
 	r.POST("/api/matches", matchController.CreateMatch)
+	r.GET("/api/matches", matchController.GetMatches)
 
 	port := os.Getenv("PORT")
 	if port == "" {

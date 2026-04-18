@@ -1,5 +1,5 @@
 $kind: http-request
-url: http://localhost:8080/api/matches/calculate
+url: "{{base_url}}/api/matches/calculate"
 method: POST
 headers:
   Content-Type: application/json
