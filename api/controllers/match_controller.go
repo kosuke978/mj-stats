@@ -141,7 +141,7 @@ func (mc *MatchController) GetMatches(c *gin.Context) {
 			om.match_date,
 			om.rule_id,
 			om.created_at,
-			mr.user_id,
+			u.name AS user_id,
 			%s AS guest_name,
 			mr.raw_score,
 			mr.final_point,
@@ -150,6 +150,7 @@ func (mc *MatchController) GetMatches(c *gin.Context) {
 			mr.rank
 		FROM ordered_matches om
 		LEFT JOIN match_results mr ON mr.match_id = om.id
+		LEFT JOIN users u ON u.id = mr.user_id
 		ORDER BY om.match_date DESC, om.created_at DESC, mr.rank ASC
 	`
 
@@ -291,27 +292,46 @@ func calculateResults(players []models.CalculatePlayerInput) []models.CalculateR
 	rankByOriginalIndex := make(map[int]int, len(players))
 	pointByOriginalIndex := make(map[int]float64, len(players))
 
-	for rankIdx, player := range ranked {
-		rank := rankIdx + 1
-		basePoint := float64(player.rawScore-30000) / 1000.0
-		point := basePoint + umaByRank[rankIdx]
-		if rank == 1 {
-			point += 20.0
+	for i := 0; i < len(ranked); {
+		j := i
+		for j < len(ranked) && ranked[j].rawScore == ranked[i].rawScore {
+			j++
 		}
 
-		rankByOriginalIndex[player.index] = rank
-		pointByOriginalIndex[player.index] = roundToOneDecimal(point)
+		tieCount := j - i
+		rank := i + 1
+
+		sumUma := 0.0
+		for k := i; k < j; k++ {
+			sumUma += umaByRank[k]
+		}
+		avgUma := sumUma / float64(tieCount)
+
+		topBonus := 0.0
+		if i == 0 {
+			topBonus = 20.0 / float64(tieCount)
+		}
+
+		for k := i; k < j; k++ {
+			player := ranked[k]
+			basePoint := float64(player.rawScore-30000) / 1000.0
+			point := basePoint + avgUma + topBonus
+
+			rankByOriginalIndex[player.index] = rank
+			pointByOriginalIndex[player.index] = roundToOneDecimal(point)
+		}
+
+		i = j
 	}
 
-	var totalWithoutFirst float64
-	firstPlayerOriginalIndex := ranked[0].index
+	var totalPoints float64
 	for i := range players {
-		if i == firstPlayerOriginalIndex {
-			continue
-		}
-		totalWithoutFirst += pointByOriginalIndex[i]
+		totalPoints += pointByOriginalIndex[i]
 	}
-	pointByOriginalIndex[firstPlayerOriginalIndex] = roundToOneDecimal(-totalWithoutFirst)
+	if roundToOneDecimal(totalPoints) != 0 {
+		firstPlayerOriginalIndex := ranked[0].index
+		pointByOriginalIndex[firstPlayerOriginalIndex] = roundToOneDecimal(pointByOriginalIndex[firstPlayerOriginalIndex] - totalPoints)
+	}
 
 	results := make([]models.CalculateResult, len(players))
 	for i, player := range players {
@@ -343,24 +363,12 @@ func validateUniquePlayerIDsForCalculate(players []models.CalculatePlayerInput) 
 
 func validateCreateMatchRequest(req models.CreateMatchRequest) error {
 	seenPlayerIDs := make(map[string]struct{}, len(req.Results))
-	seenRanks := make(map[int]struct{}, len(req.Results))
 
 	for _, result := range req.Results {
 		if _, exists := seenPlayerIDs[result.PlayerID]; exists {
 			return fmt.Errorf("player_id must be unique")
 		}
 		seenPlayerIDs[result.PlayerID] = struct{}{}
-
-		if _, exists := seenRanks[result.Rank]; exists {
-			return fmt.Errorf("rank must be unique")
-		}
-		seenRanks[result.Rank] = struct{}{}
-	}
-
-	for rank := 1; rank <= 4; rank++ {
-		if _, exists := seenRanks[rank]; !exists {
-			return fmt.Errorf("ranks must include 1, 2, 3, and 4")
-		}
 	}
 
 	return nil
