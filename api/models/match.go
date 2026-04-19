@@ -2,7 +2,7 @@ package models
 
 type CalculatePlayerInput struct {
 	PlayerID string `json:"player_id" binding:"required"`
-	RawScore int    `json:"raw_score" binding:"required"`
+	RawScore int    `json:"raw_score"`
 }
 
 type CalculateMatchRequest struct {
@@ -18,8 +18,8 @@ type CalculateResult struct {
 
 type MatchResultInput struct {
 	PlayerID  string  `json:"player_id" binding:"required"`
-	RawScore  int     `json:"raw_score" binding:"required"`
-	Point     float64 `json:"point" binding:"required"`
+	RawScore  int     `json:"raw_score"`
+	Point     float64 `json:"point"`
 	Rank      int     `json:"rank" binding:"required,min=1,max=4"`
 	IsYakuman bool    `json:"is_yakuman"`
 }
