@@ -29,9 +29,12 @@ func main() {
 	}(database)
 
 	matchController := controllers.NewMatchController(database)
+	userController := &controllers.UserController{DB: database}
 
 	r := gin.Default()
 	r.Use(cors.Default())
+
+	r.GET("/api/users/me", gin.WrapF(userController.GetMe))
 
 	r.GET("/api/health", func(c *gin.Context) {
 		if err := database.Ping(); err != nil {
