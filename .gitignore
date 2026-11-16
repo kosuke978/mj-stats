@@ -1,0 +1,5 @@
+# macOS metadata
+.DS_Store
+
+# Local Go build output
+/api/mj-stats-api
