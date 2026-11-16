@@ -1,36 +1,28 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# MJ-Stats Web
 
-## Getting Started
+MJ-StatsのNext.js / React / TypeScriptフロントエンド。プロダクト全体の入口は [ルートREADME](../README.md)、仕様・設計・作業方針は [doc/README.md](../doc/README.md) を参照する。
 
-First, run the development server:
+## 環境構築
+
+[環境構築・運用](../doc/setup-and-operations.md) でNode.js、Webの環境変数、API、DB、Supabase Authの前提を準備する。設定値やDB初期化手順をこのREADMEへ重複させない。
+
+`web` ディレクトリで実行する。
 
 ```bash
+npm ci
 npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+開発サーバーのURLは起動ログを確認する。現在の機能を確認する入口は `/login`。`/` はまだプロダクトのホームではない。各画面の実装と制限は [機能・API仕様](../doc/features-api.md) を参照する。
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+## 変更時の確認
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+```bash
+npm run lint
+npx tsc --noEmit
+npm run build
+```
 
-## Learn More
+これらに加えて、変更した画面・認証・API通信を [品質・受入確認](../doc/quality-and-acceptance.md) に沿って確認する。現在は独立したテスト基盤がなく、buildの成功だけでログイン等の動作確認済みとは判断しない。
 
-To learn more about Next.js, take a look at the following resources:
-
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
-
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
-
-## Deploy on Vercel
-
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
-
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+AIエージェントは [AGENTS.md](AGENTS.md) を読み、インストールされたNext.jsの付属ドキュメントを確認する。
