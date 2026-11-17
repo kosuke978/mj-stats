@@ -370,7 +370,7 @@ Cookieをメモリ上のstorageStateとして新しいcontextへ移し、再入�
 | Q-10/Q-08 | `pg_locks` で実Authのlocal logoutと削除がwriterを待つことを観測。writer commit後に終了。終了済みtokenで4 APIが401/書込みなし、別セッションは200。削除後はauth_idだけNULL、元の参加者/owner/member/記録者/結果を維持、再作成なし |
 | 共有保全 | 作業後に7表/構造を再READ ONLY取得し、前後のsnapshot SHA-256が上記と一致。`.local/shared-preservation.log` |
 
-**現在の状態：実装・検証完了、開発者のStep完了承認待ち。** 以下は開発者が画面操作して結果を回答した受入で、自動ブラウザ試験とは区別する。
+**現在の状態：実装・検証完了、開発者のStep完了承認待ち。** レビュー先は[Draft PR #8](https://github.com/kosuke978/mj-stats/pull/8)。実行結果と残る制限をPR本文へ集約した。 以下は開発者が画面操作して結果を回答した受入で、自動ブラウザ試験とは区別する。
 
 - 管理QAのWeb（localhost:3001）から自己登録→Mailtrap受信→確認→初回表示名設定を実行。直後に履歴503が出たため調査し、こちらの自動試験fixture 2対局のrule_idがNULLだったことを確認。専用QAの該当2件だけに検証用rule参照を設定し、管理試験にも正常なruleと履歴200のassertionを追加して再実行PASS。アプリの旧対局契約や共有DBは変更していない。開発者が修正後の履歴・本人設定の表示を確認した。
 - localログアウト→再設定依頼→Mailtrap受信→有効リンク→新パスワード更新→同じ表示名→再ログアウト→新パスワードで再ログインを開発者が完了した。
@@ -398,5 +398,5 @@ Cookieをメモリ上のstorageStateとして新しいcontextへ移し、再入�
 | 11 再訪/更新/再起動 | Cookie更新/復元/無効refreshとChromiumの実プロセス再起動PASS。実機の全保存ポリシーは未確認 |
 | 12 元画面・初回設定優先 | safeReturnTo単体とブラウザPASS |
 | 13 local終了・別セッション・削除拒否 | 実ローカル/QAでPASS。並行順序をpg_locksで確認 |
-| 14 記録・API/Postman | コード/文書/補助資料を更新。PRへの集約は作成時に記録 |
+| 14 記録・API/Postman | コード/文書/API/Postmanを更新し、Draft PR #8へ実測結果と未実施を集約済み |
 | 15 Phase 5効果・完了承認 | 共通の検証済み主体と永続参加者IDを後続の所属/記録者へ渡す基盤を整備。開発者のStep完了承認は未取得 |
