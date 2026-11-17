@@ -26,6 +26,7 @@
 
 - 状態・決定者：承認済み。開発者、2026-10-06。
 - 決定：各PRのマージと次Stepへの実装着手は、いずれも開発者の明示承認を必要とする。
+- 2026-11-18の最新引継ぎ：Step 1完了承認・PR #8マージ（`4b6a511`）・Step 2着手承認済み。今回の作業は2-1の実装/検証/コミット/push/Draft PRまで。Step 2全体の完了・マージ・Step 3・本番反映は未承認。
 - 検討した代替案：同じStep内は確認後にAIがマージし、次Stepのみ開発者承認。
 - 効果・注意：検証成功やPR作成の指示をマージ承認として扱わない。マージ承認とStep完了・次Step承認を区別する。通常の調査・実装準備を毎回許可待ちにはしない。
 - 反映先：[development-workflow.md](development-workflow.md)、[product-roadmap.md](product-roadmap.md)。
@@ -385,6 +386,16 @@
 - 状態・設計者：Step 1の運用・技術具体化、AI、2026-11-17。自己登録/確認/回復をSupabaseへ任せるD-26/D-30は維持する。
 - 実設定：新設Freeの標準配送ではメール本文の変更が400 entitlement_requiredで拒否された。[2026-06-03のSupabase変更案内](https://supabase.com/changelog/46599-changes-to-email-template-customisation-on-free-tier)と一致する。専用QAには検証用Custom SMTPを使い、外部への本番配送・有料プラン移行は別承認とする。SMTP資格情報をGitやチャットへ載せない。
 - 通信：実Auth停止試験でWebの無制限な待機を検出した。ブラウザ/SSR/proxyのAuth fetchを1回5秒に制限し、通信失敗はSDKが再試行できる503へ変換する。回復証明と利用可能なセッションを保持し、更新の5xxを入力エラー400へ誤変換しない。パスワード更新の判断・発行は引き続きSupabaseが行う。
+
+### D-43 リーグ・所属のlegacy境界とowner制約
+
+- 状態・設計者：承認済み目標モデルの2-1向け技術具体化。AI、2026-11-18。新しい業務仕様の承認や管理QA/共有DBへの適用承認ではない。
+- 採用：leaguesはgroup_number NULLをlegacy境界とし、通常GoロールのINSERT/UPDATE policyでは番号必須にする。旧リーグへ番号/owner/掲載を補完しない。所属は既定legacy、usersの確定済みkindだけを写し、activeへの昇格は行わない。
+- 比較：リーグにもdata_origin等の専用区分列を増やす方法。既存設計のnullable番号とpolicyで境界を表せるため、今回のためだけの列を増やさない。
+- 整合性：有効ownerの部分UNIQUEと両表の遅延制約でowner_idと所属を照合する。RLSに左右されない非公開trigger関数でリーグ→owner所属をロックし、失敗はrollback。Authが外れてもregistered/ownerを自動変更しない。
+- 最小参照変更：対象2表とusersの複合参照に加え、leagues削除から履歴へ波及するseasons/rulesのleague FKだけをRESTRICTへ変更する。両表の列・ルール・対局帰属の移行は後続区切り。
+- 境界：mjstats_apiの列限定GRANT/policyを追加し、legacyの読取/書換・物理削除を許さない。利用者別のGo認可、owner同意引継ぎ、招待/ゲストAPIはこのDB変更で実装済みとしない。
+- 反映先：[設計](architecture.md#step-2--2-1のdb実装境界)、[Q-25の2-1記録](quality-and-acceptance.md#step-2--2-1の検証記録2026-11-18)。
 
 ## 未決定の設計・運用
 

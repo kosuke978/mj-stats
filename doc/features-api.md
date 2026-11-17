@@ -1,6 +1,6 @@
 # 実装済み機能とAPI契約
 
-前半はStep 1作業ブランチの現行実装。認証・本人情報以外の対局契約は基準コミット `12760ca` を維持する。後半はPhase 2.5全体の目標で、Step 2以降は未実装。Step 1の実行結果・未実施は [品質・受入](quality-and-acceptance.md#step-1実装ブランチの検証記録2026-11-17) を参照する。要求は [requirements.md](requirements.md)、工程は [product-roadmap.md](product-roadmap.md)、設計条件は [architecture.md](architecture.md) を参照する。
+前半はStep 1作業ブランチの現行実装。認証・本人情報以外の対局契約は基準コミット `12760ca` を維持する。後半はPhase 2.5全体の目標。Step 1は完了承認・PR #8マージ済み。Step 2は着手済みで、2-1のリーグ/所属DB基盤のみ追加した。API/画面は今回変更せず、リーグAPI・所属認可・履歴制限は未実装。Step 1の実行結果・未実施は [品質・受入](quality-and-acceptance.md#step-1実装ブランチの検証記録2026-11-17) を参照する。要求は [requirements.md](requirements.md)、工程は [product-roadmap.md](product-roadmap.md)、設計条件は [architecture.md](architecture.md) を参照する。
 
 ## 画面と利用フロー
 

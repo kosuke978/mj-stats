@@ -468,7 +468,7 @@ func TestStep1RealDBAuth(t *testing.T) {
 	if admin.QueryRowContext(ctx, `INSERT INTO public.leagues(name,owner_id) VALUES('QA preservation',$1) RETURNING id`, participant).Scan(&league) != nil {
 		t.Fatal("owner fixture")
 	}
-	if _, err = admin.ExecContext(ctx, `INSERT INTO public.league_members(league_id,user_id,role) VALUES($1,$2,'owner')`, league, participant); err != nil {
+	if _, err = admin.ExecContext(ctx, `INSERT INTO public.league_members(league_id,user_id,role,participant_kind) VALUES($1,$2,'owner','registered')`, league, participant); err != nil {
 		t.Fatal("member fixture")
 	}
 	if admin.QueryRowContext(ctx, `INSERT INTO public.matches(recorded_by,rule_id) VALUES($1,'99999999-9999-9999-9999-999999999999') RETURNING id`, participant).Scan(&match) != nil {

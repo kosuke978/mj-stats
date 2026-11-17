@@ -86,7 +86,7 @@ node scripts/run-local.mjs web-start
 
 ### migrationとAuth権限の適用
 
-- 空の専用スタック：CLI start/resetが `20261117000000_baseline.sql` → `20261117001000_auth_profile.sql` → `20261117002000_managed_auth_validation.sql` を通常postgresとして適用する。D-40の旧 `supabase/permissions/step1_auth.sql` は適用しない。
+- 空の専用スタック：CLI start/resetが `20261117000000_baseline.sql` → `20261117001000_auth_profile.sql` → `20261117002000_managed_auth_validation.sql` → `20261118000000_league_membership_foundation.sql` を通常postgresとして適用する。D-40の旧 `supabase/permissions/step1_auth.sql` は適用しない。
 - baselineは観測済み7表39列20制約9 indexを再現する。既存DBへCREATE TABLEを再実行しない。既存環境の正確な列・制約・index・RLS・policy・triggerを照合した後だけbaselineを履歴へ記録し、増分を適用する。再開後の実コピーで一致と増分保全を確認した。元の共有DBには適用しない。
 - `node scripts/test-migrations.mjs` は識別済みコンテナ内の使い捨てDBで、Authメタデータ契約と合成旧データを用意して増分と再適用拒否を確認する。`--snapshot .local/legacy-actual-20261117.json` を指定すると実コピーの構造を照合し、全元列値・参照を比較する。元のスナップショットは `api` で `go run ./cmd/legacy-snapshot ../.local/legacy-actual-20261117.json` によりREAD ONLY取得する。生成した一時DBだけをfinallyで削除する。
 - D-41ではpostgres所有の非公開viewを通じて限定7列と行ロックを委譲する。関数所有はNOLOGIN/NOBYPASSRLS、viewのSELECT/UPDATE(id)だけでAuthへの直接権限は持たない。viewへの実UPDATEはtriggerで拒否する。AuthのRLS/policyを変更せず、所有者やsupabase_adminの追加作業を要求しない。
@@ -134,6 +134,30 @@ Goの通常go testは実環境試験をSKIPする。実環境試験は.localのU
 QAのGoは `node scripts/run-managed.mjs api`（localhost:8081）。Webは `node scripts/run-managed.mjs web-build` → `node scripts/run-managed.mjs web-start`（localhost:3001）。公開Auth URLをビルド時に固定するため、QAは `.next-qa`、ローカルは `.next` へ分離する。これはローカルでQAサービスに接続する検証で、本番へのデプロイではない。
 
 `api` の `MJSTATS_MANAGED_INTEGRATION=1 GIN_MODE=release go test -run TestStep1ManagedSupabase -count=1 -v .` で実QAのES256/JWKS、専用APIロール、初回/並行me、名前、公開/直接権限拒否、並行local signOut/Auth削除と元IDの保全を確認する。管理CLIのSQLも専用QAに固定する。負の署名fixture全種と旧対局契約の回帰はローカルの包括試験を使い、管理環境で実施した範囲と混同しない。作成するのはQA用主体と参照だけで、共有のコピーや本人情報をQAへ流用しない。
+
+## Step 2 / 2-1のローカル適用と検証
+
+2-1は [20261118000000_league_membership_foundation.sql](../supabase/migrations/20261118000000_league_membership_foundation.sql) のみを増分追加する。既存3 migrationを変更しない。専用ローカル `mj-stats-step1`（DB 127.0.0.1:55422）と、その中の使い捨て `mjstats_migration_*` DBを使用する。元共有DB・既存QA `mj-stats-step1-qa`（`ndwjiiqhliwjpsqqoarg`）へは適用しない。QAのStep 1証跡を保持し、追加適用と管理環境の総合受入は後続区切り。
+
+```bash
+# project_id=mj-stats-step1、コンテナlabel、55422、未linkを確認して実行
+# CLI 3.2.0ではmigration upの既定はlocal。--remoteを付けない。
+npm run supabase -- migration up
+npm run test:migrations
+npm run test:migrations -- --snapshot .local/legacy-actual-20261117.json
+# apiディレクトリ。専用ローカル接続設定の準備後
+MJSTATS_INTEGRATION=1 GIN_MODE=release go test -run TestStep1RealDBAuth -count=1 -v .
+```
+
+migration試験は環境を識別してから使い捨てDBを作る。空DB全適用と旧コピー増分の列/制約/index/RLS/policy/triggerを照合し、元列の全値とStep 1追加列を比較する。合成NULL/未知role・Auth解除済みregistered等の移行試験は一時tx内で行いrollbackする。再適用拒否に加え、検証用の `supabase_migrations.schema_migrations` 履歴で欠落/SQL相違/未知版を注入し、次DDLの前の照合で拒否する。これは隔離試験ハーネスの履歴検査であり、管理SupabaseのCLIがSQL改変まで自動検知する保証ではない。実適用前は履歴と実スキーマを別途照合する。
+
+使い捨てDB内で空構築→コピー構築のためpublic/private schemaを再作成し、finallyで当該一時DBだけを削除する。通常のpostgres DB、共有/QAのresetには転用しない。失敗ログはSQLSTATE・検証箇所のみとし、元データ・接続秘密を出さない。
+
+通常リーグは番号必須、旧番号NULLは非掲載・通常APIロールから不可視。所属のkindはusersの値を明示し、通常statusはactive等を明示する。初期owner所属まで同一txで作成する必要があり、リーグだけのcommitは拒否される。owner変更は旧owner降格→新owner設定→owner_id更新を同一txで行う。Goの認可/版照合/同意/記録は後続実装。物理DELETE権限は追加しない。
+
+今回の `local:prepare` 前の `.local/api.env`・`web.env`・`acceptance.json` は `.local/step2-1-original-local-config/` に保存した。Step 1の証跡・スナップショット・署名鍵、既存api/.env・web/.env.localを保持する。管理QA試験のfixtureもkindを明示する形に更新したが、**2-1未適用の既存QAでその試験を再実行しない**。後続の適用承認とmigration後に行う。
+
+戻す必要がある場合も、既存行を削除して再適合させず、書込みを止めて対象・直前版・保存コピーを確認する。今回の適用先は専用ローカルだけ。共有/QAへ逆DDLを適用しない。最新の結果と未実施は[2-1の検証記録](quality-and-acceptance.md#step-2--2-1の検証記録2026-11-18)を参照する。
 
 ## 起動
 

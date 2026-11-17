@@ -248,7 +248,7 @@ func TestStep1ManagedSupabase(t *testing.T) {
 
 	// Create only this test's references; preserve the recorded participant on Auth deletion.
 	manage(`WITH l AS (INSERT INTO public.leagues(name,owner_id) VALUES('Managed QA preservation',`+quote(participant)+`) RETURNING id)
-    INSERT INTO public.league_members(league_id,user_id,role) SELECT id,`+quote(participant)+`,'owner' FROM l;
+    INSERT INTO public.league_members(league_id,user_id,role,participant_kind) SELECT id,`+quote(participant)+`,'owner','registered' FROM l;
     WITH r AS (INSERT INTO public.rules(name,uma_1,uma_2,uma_3,uma_4) VALUES('Managed QA rule',20,10,-10,-20) RETURNING id),
     m AS (INSERT INTO public.matches(recorded_by,rule_id) SELECT `+quote(participant)+`,id FROM r RETURNING id)
     INSERT INTO public.match_results(match_id,user_id,raw_score,final_point,rank) SELECT id,`+quote(participant)+`,25000,0,1 FROM m;`, false)

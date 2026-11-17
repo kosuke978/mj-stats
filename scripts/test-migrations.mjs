@@ -2,6 +2,7 @@
 import { execFileSync } from 'node:child_process'
 import { createHash } from 'node:crypto'
 import { readFileSync, readdirSync } from 'node:fs'
+import { testLeagueFoundation, testLeagueMigration } from './test-league-foundation.mjs'
 const container = 'supabase_db_mj-stats-step1'
 const info = JSON.parse(execFileSync('docker', ['inspect', container], { encoding: 'utf8' }))[0]
 if (info.Config.Labels['com.supabase.cli.project'] !== 'mj-stats-step1' || !info.NetworkSettings.Ports['5432/tcp'].some(p => p.HostPort === '55422')) throw new Error('Refusing unknown environment')
@@ -12,7 +13,7 @@ const snapshot = input ? JSON.parse(input) : null
 const tables = ['users', 'leagues', 'league_members', 'seasons', 'rules', 'matches', 'match_results']
 const database = `mjstats_migration_${Date.now()}`
 function sql(text, user = 'postgres', db = database) {
-  return execFileSync('docker', ['exec', '-i', container, 'psql', '-X', '-A', '-t', '-U', user, '-d', db, '-v', 'ON_ERROR_STOP=1'], { input: text, encoding: 'utf8', stdio: ['pipe', 'pipe', 'pipe'] }).trim()
+  return execFileSync('docker', ['exec', '-i', container, 'psql', '-X', '-A', '-t', '-U', user, '-d', db, '-v', 'ON_ERROR_STOP=1'], { input: '\\set VERBOSITY sqlstate\n' + text, encoding: 'utf8', stdio: ['pipe', 'pipe', 'pipe'] }).trim()
 }
 const queries = {
   columns: `SELECT COALESCE(jsonb_agg(to_jsonb(c) ORDER BY table_name,ordinal_position),'[]') FROM (SELECT table_name,column_name,ordinal_position,data_type,udt_name,is_nullable,column_default,character_maximum_length,numeric_precision,numeric_scale FROM information_schema.columns WHERE table_schema='public' AND table_name IN ('users','leagues','league_members','seasons','rules','matches','match_results')) c`,
@@ -27,8 +28,29 @@ function sameJSON(a, b) {
   const quote = value => "'" + JSON.stringify(value).replaceAll("'", "''") + "'::jsonb"
   return sql(`SELECT ${quote(a)} = ${quote(b)};`) === 't'
 }
-const beforeQuery = `SELECT jsonb_build_object(${tables.map(t => `'${t}',(SELECT jsonb_agg(to_jsonb(t) ORDER BY to_jsonb(t)::text) FROM public.${t} t)`).join(',')});`
-const afterQuery = `SELECT jsonb_build_object(${tables.map(t => `'${t}',(SELECT jsonb_agg(${t === 'users' ? "to_jsonb(t)-'participant_kind'-'profile_completed_at'-'version'" : 'to_jsonb(t)'} ORDER BY ${t === 'users' ? "(to_jsonb(t)-'participant_kind'-'profile_completed_at'-'version')::text" : 'to_jsonb(t)::text'}) FROM public.${t} t)`).join(',')});`
+function projectionQuery(columns) {
+  return `SELECT jsonb_build_object(${tables.map(t => {
+    const row = `jsonb_build_object(${columns.filter(c => c.table_name === t).map(c => `'${c.column_name}',t.${c.column_name}`).join(',')})`
+    return `'${t}',(SELECT jsonb_agg(${row} ORDER BY (${row})::text) FROM public.${t} t)`
+  }).join(',')});`
+}
+const files = readdirSync('supabase/migrations').filter(f => f.endsWith('.sql')).sort()
+const migration = file => readFileSync(`supabase/migrations/${file}`, 'utf8')
+// Isolated acceptance ledger using the Supabase history shape. Exact SQL and
+// version/order are checked here; this is not a production migration runner.
+function verifyHistory(expected) {
+  const rows = JSON.parse(sql(`SELECT COALESCE(json_agg(h ORDER BY version),'[]') FROM supabase_migrations.schema_migrations h;`))
+  if (rows.length !== expected.length || rows.some((r, i) => r.version !== expected[i].split('_')[0] || r.statements.join('') !== migration(expected[i]))) throw new Error('Migration history mismatch')
+}
+function apply(file, applied) {
+  verifyHistory(applied)
+  const body = migration(file), version = file.split('_')[0]
+  if (applied.includes(file)) throw new Error('Already applied')
+  const quote = x => "'" + x.replaceAll("'", "''") + "'"
+  sql(body.replace(/COMMIT;\s*$/, () => `INSERT INTO supabase_migrations.schema_migrations(version,statements,name) VALUES ('${version}',ARRAY[${quote(body)}],${quote(file)}); COMMIT;`))
+  applied.push(file)
+  verifyHistory(applied)
+}
 let created = false, stage = 'environment setup'
 try {
   sql(`CREATE DATABASE ${database} TEMPLATE template0;`, 'postgres', 'postgres'); created = true
@@ -42,8 +64,18 @@ try {
     GRANT SELECT ON auth.users,auth.sessions TO postgres WITH GRANT OPTION;
     GRANT UPDATE(id) ON auth.users,auth.sessions TO postgres;
     GRANT REFERENCES ON auth.users TO postgres;`, 'supabase_admin')
+  sql(`CREATE SCHEMA supabase_migrations; CREATE TABLE supabase_migrations.schema_migrations(version text PRIMARY KEY, statements text[], name text);`)
+  const applied = []
+  stage = 'empty full application'
+  for (const file of files) apply(file, applied)
+  const emptyShape = Object.fromEntries(Object.entries(queries).map(([name,q]) => [name, JSON.parse(sql(q))]))
+  console.log('PASS empty database: all migrations + complete history applied as postgres')
+  // Roll back this test-only schema rebuild in a disposable database, never the
+  // local stack's postgres database. Cluster roles and Auth metadata stay intact.
+  sql(`DROP SCHEMA public CASCADE; CREATE SCHEMA public; DROP SCHEMA mjstats_private CASCADE; TRUNCATE supabase_migrations.schema_migrations;`)
+  applied.length = 0
   stage = 'baseline application'
-  sql(readFileSync('supabase/migrations/20261117000000_baseline.sql', 'utf8'))
+  apply(files[0], applied)
   if (JSON.parse(sql(queries.columns)).length !== 39 || JSON.parse(sql(queries.constraints)).length !== 20 || JSON.parse(sql(queries.indexes)).length !== 9) throw new Error('Baseline shape')
   console.log('PASS baseline: 7 tables / 39 columns / 20 constraints / 9 indexes')
   stage = 'source schema comparison'
@@ -69,9 +101,18 @@ try {
         ('11111111-1111-1111-1111-111111111111',40000,50,1),('22222222-2222-2222-2222-222222222222',30000,10,2),
         ('33333333-3333-3333-3333-333333333333',20000,-20,3),('44444444-4444-4444-4444-444444444444',10000,-40,4)) v(id,score,point,rank);`)
   }
-  const before = sql(beforeQuery)
+  const oldColumns = JSON.parse(sql(queries.columns))
+  const afterQuery = projectionQuery(oldColumns)
+  const before = sql(afterQuery)
   stage = 'incremental migrations'
-  for (const file of readdirSync('supabase/migrations').filter(f => f.endsWith('.sql') && !f.includes('_baseline')).sort()) sql(readFileSync(`supabase/migrations/${file}`, 'utf8'))
+  for (const file of files.slice(1).filter(f => f.startsWith('20261117'))) apply(file, applied)
+  const step1Query = projectionQuery(JSON.parse(sql(queries.columns)))
+  const step1Before = sql(step1Query)
+  testLeagueMigration(sql, migration('20261118000000_league_membership_foundation.sql'))
+  for (const file of files.filter(f => !f.startsWith('20261117'))) apply(file, applied)
+  if (step1Before !== sql(step1Query)) throw new Error('Step 1 values changed')
+  for (const [name,q] of Object.entries(queries)) if (!sameJSON(emptyShape[name],JSON.parse(sql(q)))) throw new Error(`Empty/incremental ${name} differ`)
+  console.log('PASS empty/incremental schema equality; all Step 1 columns preserved')
   const after = sql(afterQuery)
   if (before !== after) throw new Error('Legacy value or reference changed')
   const counts = JSON.parse(sql(`SELECT json_build_object('users',(SELECT count(*) FROM public.users),'matches',(SELECT count(*) FROM public.matches),'results',(SELECT count(*) FROM public.match_results),'legacy',(SELECT count(*) FROM public.users WHERE participant_kind='legacy' AND auth_id IS NULL AND profile_completed_at IS NULL));`))
@@ -79,13 +120,34 @@ try {
   if (counts.users !== expectedUsers || counts.legacy !== expectedUsers || counts.matches !== (snapshot ? snapshot.matches.length : 19) || counts.results !== (snapshot ? snapshot.match_results.length : 76)) throw new Error('Legacy counts')
   if (sql(`SELECT NOT has_schema_privilege('mjstats_auth_validator','auth','USAGE') AND NOT has_any_column_privilege('mjstats_auth_validator','auth.users','SELECT,UPDATE');`) !== 't') throw new Error('Validator has direct Auth access')
   stage = 'replay rejection'
-  let rejected = false
-  try { sql(readFileSync('supabase/migrations/20261117001000_auth_profile.sql', 'utf8')) } catch { rejected = true }
-  if (!rejected || after !== sql(afterQuery)) throw new Error('Replay changed rows')
+  for (const file of files.slice(1)) {
+    let rejected = false
+    try { sql(migration(file)) } catch { rejected = true }
+    if (!rejected || after !== sql(afterQuery)) throw new Error('Replay changed rows')
+  }
+  for (const damage of [
+    `DELETE FROM supabase_migrations.schema_migrations WHERE version='20261118000000'`,
+    `UPDATE supabase_migrations.schema_migrations SET statements=ARRAY['changed'] WHERE version='20261118000000'`,
+    `INSERT INTO supabase_migrations.schema_migrations VALUES ('99999999999999',ARRAY['unknown'],'unknown')`,
+  ]) {
+    const history = sql(`SELECT json_agg(h) FROM supabase_migrations.schema_migrations h`)
+    sql(damage)
+    let rejected = false
+    try { verifyHistory(applied) } catch { rejected = true }
+    if (!rejected) throw new Error('History drift accepted')
+    sql(`TRUNCATE supabase_migrations.schema_migrations; INSERT INTO supabase_migrations.schema_migrations SELECT * FROM json_populate_recordset(NULL::supabase_migrations.schema_migrations,'${history.replaceAll("'", "''")}'::json);`)
+  }
+  verifyHistory(applied)
+  console.log('PASS replay rejection and missing/changed/unknown migration history detection')
   console.log(`PASS ${snapshot ? 'actual-copy' : 'synthetic'} increment: ${counts.users} participants / ${counts.matches} matches / ${counts.results} results; all old values and references preserved`)
   console.log('PASS normal postgres migrations; validator has no direct Auth access; repeated raw migration rejected without data change')
+  stage = 'league foundation constraints and permissions'
+  await testLeagueFoundation(sql, { container, database })
   if (!snapshot) console.log('Actual-copy acceptance is separate: rerun with --snapshot <read-only-export.json>.')
-} catch {
+} catch (error) {
+  // SQLSTATE only: never emit row values, query text or connection details.
+  console.error(error.stderr ? String(error.stderr).match(/ERROR:  [A-Z0-9]{5}/)?.[0] ?? 'SQL execution failed' : error.message)
+  console.error(error.stack.split('\n').filter(line => line.trim().startsWith('at ')).join('\n'))
   console.error(`Migration test failed during ${stage}; row values and connection details withheld`)
   process.exitCode = 1
 } finally {

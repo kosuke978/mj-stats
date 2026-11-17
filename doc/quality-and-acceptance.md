@@ -2,7 +2,7 @@
 
 この文書は「どの証拠があれば完成と言えるか」を定める。要求の正本は [requirements.md](requirements.md)、現行の挙動は [features-api.md](features-api.md)、設計条件は [architecture.md](architecture.md)、工程とDoDは [product-roadmap.md](product-roadmap.md) を参照する。
 
-Qケースの一覧は検証設計であり、全件を実行済みとは扱わない。設計整備時の読み取り調査に加え、Step 1作業ブランチで専用ローカルDB/Auth/メールとChromium、管理QAの実DB/Authと開発者のメール手動操作による実行結果を取得した。対象ケース・証跡・未実施は [末尾の検証記録](#step-1実装ブランチの検証記録2026-11-17) に分ける。将来Stepのケースを記載しても、その実装着手を承認したことにはならない。
+Qケースの一覧は検証設計であり、全件を実行済みとは扱わない。設計整備時の読み取り調査に加え、Step 1作業ブランチで専用ローカルDB/Auth/メールとChromium、管理QAの実DB/Authと開発者のメール手動操作による実行結果を取得した。対象ケース・証跡・未実施は [Step 1記録](#step-1実装ブランチの検証記録2026-11-17) と [2-1記録](#step-2--2-1の検証記録2026-11-18) に分ける。将来Stepのケースを記載しても、その実装着手を承認したことにはならない。
 
 ## 現在の検証基盤
 
@@ -152,10 +152,10 @@ D-35/D-37/D-38は2026-11-16に承認済み。次のケースをQ-14/Q-15/Q-18/Q-
 | Q-11 / R-MATCH-02・03 | 40,000 / 30,000 / 20,000 / 0点をAPIへ直接送る。点数未指定・許容外の単位/範囲も、確定した契約に従って送る | 計算・保存ともGoが不正入力を拒否し、保存件数は変わらない。現行は合計90,000点も計算し、補正でpoint合計0にできるため未達 |
 | Q-12 / R-MATCH-03 | 正しい素点に偽のpoint/rankを混ぜて保存し、正常保存も比較する | 目標APIでは余分なpoint/rankを400で拒否しDB変更なし。正常時はGoのルール計算値だけが対局1件・結果4件へ保存される。現行はクライアント値を保存する |
 | Q-13 / R-MATCH-03 | 隔離DBで結果3件目のINSERTをFK違反等の制約または故障注入で失敗させる。開始前と応答後の対局・結果・必要なら新規ゲストを比較 | 成功済みのINSERTもrollbackされ、部分対局・孤立結果を残さない。現行にtxとdefer rollback、実DBに結果のuser_id FKがある。失敗注入は隔離DBで行い、今回の読み取り調査を試験実行と扱わない |
-| Q-14 / R-LEAGUE-01・R-HISTORY-01 | 2リーグを用意し、所属者/非所属者の履歴取得・保存と、別リーグのrule/season/参加者の指定を試す | D-11/D-12により所属者は閲覧可、所属登録者は新規記録可、非所属者は拒否しデータ変更なし。リーグをまたぐ参照の混在も拒否。現行は全件履歴・所属チェックなし。方針は承認済みだがStep 2の実装着手は未承認 |
+| Q-14 / R-LEAGUE-01・R-HISTORY-01 | 2リーグを用意し、所属者/非所属者の履歴取得・保存と、別リーグのrule/season/参加者の指定を試す | D-11/D-12により所属者は閲覧可、所属登録者は新規記録可、非所属者は拒否しデータ変更なし。リーグをまたぐ参照の混在も拒否。現行は全件履歴・所属チェックなし。Step 2着手承認済み。2-1のDB検証を除き、このAPI認可ケースは未実行 |
 | Q-15 / R-GUEST-01・R-HISTORY-01 | 同じゲストを2対局で選択し、同名の別ゲストと並べる。登録者の名前変更後も履歴を取得 | 同一ゲストは永続IDを再利用し、同名だけで別人を統合しない。IDと名前を別項目で返す。現行はゲスト保存不可、履歴の `user_id` に名前を返しており未達 |
 | Q-16 / R-SEASON-01・R-MATCH-02 | season IDのGo/DB/seedの型を確認。ルール条件更新の拒否・新版作成・新旧履歴、初回保存とavailable変更の並行実行を試す | 条件変更は未使用でも新版作成へ統一し、旧対局の参照・結果を維持。利用停止後に開始した新規保存は拒否し、成功済みの再送は同じ対局を返す。seasonはUUID/NULL。旧結果を再計算しない。Phase 5の切替運用はLocked |
-| Q-17 / R-AUTH-02・R-MATCH-03 | 所属する登録者Aと別の参加者4名を用意して代理記録する。他人の `recorded_by` を指定したbody、非所属者の記録も試す | D-12によりAの代理記録は成功し、記録者はGoが検証済みAから特定する。他人のIDを記録者に採用せず、非所属者は拒否。現在は記録者を保存しない。方針は承認済み、Step 2〜3の実装着手は未承認 |
+| Q-17 / R-AUTH-02・R-MATCH-03 | 所属する登録者Aと別の参加者4名を用意して代理記録する。他人の `recorded_by` を指定したbody、非所属者の記録も試す | D-12によりAの代理記録は成功し、記録者はGoが検証済みAから特定する。他人のIDを記録者に採用せず、非所属者は拒否。現在は記録者を保存しない。Step 2着手承認済み、Step 3未承認。この代理記録/記録者のAPIケースは未実行 |
 | Q-18 / R-ADMIN-01 | 同じユーザーがリーグAではadmin、Bではmemberとなるfixtureで管理操作を試す | 承認したリーグごとの権限表に従い、AのroleをBへ流用しない。認可拒否時に変更なし。Admin機能・詳細な権限表の実装はStep 5の承認後 |
 | Q-19 / R-NAV-01 | ログイン後のホームから入力・履歴へ移動し、空・読込み・取得失敗と戻る操作を確認する。対象幅とキーボードでも操作する | Step 4で主要操作へ辿れ、各状態で次の行動が分かる。初期テンプレートが入口のまま残らない。順位表への接続はStep 5の実装後に確認 |
 | Q-20 / R-RANKING-01 | 2リーグ・2期間、同点と参加回数差を含む結果を用意し、承認した指標の手計算期待値と順位表を比較する | D-19の指標・同点・対象条件と一致し、他リーグや対象外期間を混ぜない。D-11の所属制限が集計APIにも適用される。空期間とホームからの接続を確認。Step 5着手前は検証設計のみ |
@@ -400,3 +400,39 @@ Cookieをメモリ上のstorageStateとして新しいcontextへ移し、再入�
 | 13 local終了・別セッション・削除拒否 | 実ローカル/QAでPASS。並行順序をpg_locksで確認 |
 | 14 記録・API/Postman | コード/文書/API/Postmanを更新し、Draft PR #8へ実測結果と未実施を集約済み |
 | 15 Phase 5効果・完了承認 | 共通の検証済み主体と永続参加者IDを後続の所属/記録者へ渡す基盤を整備。開発者のStep完了承認は未取得 |
+
+
+## Step 2 / 2-1の検証記録（2026-11-18）
+
+対象はPhase 2.5 / Step 2内 **2-1「リーグ・所属のDB基盤」**。区切り完了、Step 2全体は途中。開発者の最新引継ぎでStep 1完了承認・PR #8マージ（`4b6a511`）・Step 2着手承認を確認した。上記のStep 1記録の「承認待ち」は各記録時点の状態として保持する。今回のブランチは `feat/step-2-league-foundation`。R-LEAGUE-01/R-GUEST-01/R-AUTH-02のDB部分、D-04/D-05/D-08/D-18/D-21/D-43が対象。
+
+| コマンド・環境 | 期待値と実測結果 | 証跡（Git管理外） |
+| --- | --- | --- |
+| `npm run test:migrations` | PASS。空の一時DBへ全4 migrationを通常postgresで適用。合成コピーの5参加者/19対局/76結果へ増分、元全列とStep 1追加列が同値。空/増分の列・制約・index・RLS・policy・triggerが一致 | `.local/step2-1-migrations-synthetic.log` |
+| `npm run test:migrations -- --snapshot .local/legacy-actual-20261117.json` | PASS。保存済み実コピーの39列/20制約/9 index等をbaselineと照合。5参加者・1リーグ・5所属・1シーズン・2ルール・19対局・76結果の全元値/ID/参照を維持。旧role/名前/日時/NULL/numeric値を変更せず、所属はlegacy、番号NULL・非掲載 | `.local/step2-1-migrations-actual.log`、元snapshot SHA-256 `92889b85388125c24610b44f7941dbece1a117ccf95f7ec7c40875b8c16f67ea` |
+| 上記2コマンドの制約試験 | 各72件のDB assertionと独立したowner競合ケースPASS。下表にサブケースを記す | 上記2ログ、[実行コード](../scripts/test-league-foundation.mjs) |
+| `npm run supabase -- migration up` | 専用ローカル127.0.0.1:55422へ2-1増分のみ適用PASS。2回目は適用0件。管理QA・元共有DBへ未接続/未適用 | `.local/step2-1-local-migration-up.log`、`step2-1-local-migration-repeat.log` |
+| `go test ./...` / `go vet ./...`（api） | PASS。通常go testでは実DB/Auth試験をSKIPし、次行でローカル実行 | `.local/step2-1-go-test.log`、`step2-1-go-vet.log` |
+| `MJSTATS_INTEGRATION=1 GIN_MODE=release go test -run TestStep1RealDBAuth -count=1 -v .`（api） | PASS。2-1適用後の実DB/AuthでStep 1回帰。所属fixtureのkindを明示したのみで業務Goコード変更なし | `.local/step2-1-auth-regression.log` |
+
+Q-25の今回実行した範囲：
+
+| サブケース | 期待値・結果 |
+| --- | --- |
+| 空構築/増分/再適用/履歴 | 全4 migrationの空適用とコピー増分が同じ構造。増分のraw再適用を拒否し行不変。検証ハーネスの履歴に欠落/SQL相違/未知版を入れ、次DDL前に不一致を検知。管理CLIの改変自動検知試験ではない |
+| 旧値と分類 | 全元列の値/ID/FK参照を比較。追加の合成移行でNULL/未知role、joined_at NULL、所属のないowner、Auth解除済みregisteredを保全。全旧所属をlegacyにし、active・本人関係・番号を推測補完しない |
+| 正常な通常データ | 先頭0を持つ12桁番号、非掲載/版1の既定値、registeredの複数リーグ所属、guestの1所属。mjstats_apiでリーグ＋初期ownerを一括作成成功 |
+| 所属の拒否/終了 | 重複PK・不正/NULL role・不明kind/種別不一致・存在しない参照・legacy参加者のactive・guestのadmin・不正status/終了日時/版を拒否。終了後も同じゲストの2リーグ目を拒否。removed→activeを同じPKで再利用。APIの再参加検証ではない |
+| owner整合/rollback | owner欠落・別人owner・二重active owner・参照だけ/roleだけ/所属削除等を拒否。正常な同一tx移譲は成功。期待失敗ごとに7表の全行fingerprint不変を確認 |
+| owner競合 | リーグ行を保持した別txに対しowner終了のcommitが待機することをpg_locksで観測。解放後に不正commitが拒否され、元active ownerが残る。Goの管理API/同意/全競合パターンの受入ではない |
+| 削除保護 | ownerだけで参照される参加者、所属参加者、所属/season/ruleがあるリーグの物理削除を個別に拒否し、全行不変 |
+| 通常/公開ロール | mjstats_apiの通常SELECT/列限定INSERT/UPDATE成功、legacy不可視/作成・降格拒否、ID/kind/番号のUPDATE・DELETE・Auth/view直接参照・制約関数直接実行を拒否。anon/authenticatedの両表SELECT/INSERT/UPDATE/DELETE、公開3ロールの制約関数を拒否 |
+| Step 1回帰 | Q-06/07/08/10、Q-15の改名/ID保全、Q-25のD-41権限、旧契約のQ-01/05/13を実行。13異常認証×4 API、12並行me、local signOutとAuth削除のロック順序、auth_idだけ解除しregistered/owner/所属/記録者/結果を維持。DB障害503も確認 |
+
+文書・差分確認は変更Markdown 9ファイルのローカルリンク/anchor 155件、`git diff --check`、既存3 migrationの差分なし、変更/新規ファイルの秘密鍵/トークンパターン検査がPASS。
+
+2-1の検証環境は専用ローカルPostgreSQL 17とAuth、同コンテナ内の使い捨てDBのみ。2026-11-17保存済み実コピーを使い、今回元共有DBの再取得・書込みは行っていない。共有の5参加者/19対局/76結果と既存QAは変更していない。Step 1の証跡・既存.local設定の退避コピー・署名鍵を保持する。
+
+未実施・引継ぎ：Goのリーグ認可/履歴制限（Q-14/Q-17）、作成/招待/検索/参加API、ゲスト作成/本人紐付け、ルール/season/対局帰属・正確値・管理画面は今回のPASSに含まない。Webを変更していないためブラウザ/lint/buildは再実行していない。管理QAへの2-1適用と総合受入は後続区切り。Safari/iOS Safari/Android Chrome実機・前メジャー版、実Auth鍵ローテーション、本番SMTP/URL/バックアップ/復旧/運用条件、Postman UIの未確認は維持する。DB基盤の完成で旧全件履歴やクライアントpoint保存の負債が解消したとは扱わない。
+
+2-1完了後は停止し、2-2・別改善・PRマージ・Step 3・本番反映へ進まない。

@@ -48,6 +48,23 @@ Step 1ブランチではGoに共通JWT/主体/セッション検証を追加し�
 
 対局のbody、floatポイント、固定候補、全件履歴はこのStepで刷新しない。リーグ認可、正確値、記録者、ゲスト連携はStep 2〜3。開発者の再開指示後、共有の実コピーを取得し増分保全を検証した。新migrationの適用先は専用ローカルと新設QAで、共有DBは変更していない。WebのAuth通信は1回5秒、通信障害は再試行可能な503として扱う（D-42）。
 
+## Step 2 / 2-1のDB実装境界
+
+[20261118000000_league_membership_foundation.sql](../supabase/migrations/20261118000000_league_membership_foundation.sql)を増分追加する。適用先は専用ローカルと隔離コピーだけ。過去の実DB観測と、以下の実装済みスキーマを区別する（D-43）。
+
+| 対象 | 2-1で実装した列・制約 |
+| --- | --- |
+| leagues | group_number char(12) NULL UNIQUE、search_listed NOT NULL DEFAULT false、version bigint DEFAULT 1 / 正数。番号ありはASCII数字12桁・owner必須、番号NULLはlegacy・検索非掲載。旧行の番号/ownerは補完しない |
+| league_members | participant_kind、status（active/left/removed/legacy）、ended_at、正数version。旧statusは一律legacy、kindはusersからそのまま写す。既存PKを維持し、users(id,participant_kind)のUNIQUEへ複合FK。guestのuser_idは終了済みを含め部分UNIQUE |
+| 通常所属 | legacy以外はregistered/guest、role NOT NULLかつowner/admin/member。guestはmemberのみ。activeはended_at NULL、left/removedは終了日時必須。legacyは終了不明としてNULL、旧NULL/未知roleを維持 |
+| owner | active/ownerをリーグごとに部分UNIQUE。両表の遅延制約triggerで、番号ありリーグのowner_idがactive/owner/registered所属と一致することをcommit時に確認。番号NULLリーグに通常所属を作らない |
+| 削除保護 | leagues.owner_id→users、league_members→users/leagues、seasons/rules→leaguesをRESTRICT。ユーザーやリーグ削除から所属・ルール・シーズン・対局へ連鎖する経路を閉じる。season自体→matches、matches→resultsの削除参照見直しは後続範囲 |
+| 専用Goロール | 番号ありリーグ／非legacy所属のSELECT・列限定INSERT/UPDATEとpolicy。ID/kind/番号/作成日時のUPDATE・DELETEは許可しない。anon/authenticatedとPUBLICへ両表の権限を与えない |
+
+owner制約関数は固定search_path・完全修飾SQL・postgres所有のSECURITY DEFINERとし、RLSの見え方に依存せずリーグ行→owner所属行をロックして最終状態を確認する。関数の直接EXECUTEはPUBLIC/公開3ロール/Go/validatorから剥奪する。[PostgreSQLの遅延制約trigger](https://www.postgresql.org/docs/17/sql-createtrigger.html)に従い作成/移譲を同一txで行い、部分UNIQUEに合わせ旧owner降格→新owner設定→owner_id更新の順に扱う。競合時のdeadlock/serialization失敗もtx全体をrollbackする。版の照合/加算、本人同意、認証・業務認可は後続Go実装の責務。
+
+Auth解除でもregisteredの種別・owner/所属参照を維持する。D-41/D-42を変更せず、旧参加者ID・名前・role・日時・対局参照・numeric値を保全する。新しい補助表やrule/season/対局帰属列は追加しない。DBロールのpolicyはサービス境界であり、利用者ごとのリーグ認可の完成を意味しない。旧全件履歴・旧保存契約は継続中。
+
 ## 7つのコアテーブル
 
 以下は各テーブルの役割と現在のAPIとの接続状況。実DBの列・型・制約・RLSは後述の調査結果で確認済み。テーブルの存在と、リーグ等の機能をアプリから運用できることは区別する。
@@ -55,8 +72,8 @@ Step 1ブランチではGoに共通JWT/主体/セッション検証を追加し�
 | テーブル | 役割 | コード・seedで使われる主な項目 | 現在の接続状況 |
 | --- | --- | --- | --- |
 | `users` | 登録者・永続ゲストの参加者ID | `id`, `auth_id`, `name`, `created_at` | Step 1でauth_idによる本人取得・名前設定/変更を接続。結果保存・履歴JOIN・seed。ゲスト操作は未実装 |
-| `leagues` | コミュニティ・集計・権限の境界 | `id`, `name`, `owner_id` | seedのみ。取得・管理APIなし |
-| `league_members` | リーグ所属と役割 | `league_id`, `user_id`, `role` | seedのみ。所属・権限チェックなし |
+| `leagues` | コミュニティ・集計・権限の境界 | `id`, `name`, `owner_id` | 2-1でDB制約を追加。取得・管理APIなし |
+| `league_members` | リーグ所属と役割 | `league_id`, `user_id`, `role` | 2-1で種別/状態/owner制約を追加。Goの所属・権限チェックなし |
 | `seasons` | リーグ内の成績集計期間 | `id`, `league_id`, `name`, `start_date`, `end_date` | seed、保存APIの引数。選択・管理・集計なし |
 | `rules` | 持ち点・返し点・ウマなど | `id`, `league_id`, `name`, `default_points`, `return_points`, `uma_1`〜`uma_4` | seedと対局の参照ID。計算処理はルールを読まない |
 | `matches` | 対局単位の記録 | `id`, `rule_id`, `season_id`, `recorded_by`, `created_at` | 保存・履歴あり。APIは記録者を保存せず、DBにmatch_date列はない |
@@ -587,7 +604,7 @@ D-17に従い、リーグ通算は未指定シーズンを含み、特定シー�
 
 ## 設計確認11へ渡す目標データモデル
 
-以下は既存7テーブルを維持して承認済みの条件を実現する未適用の設計。前半の39列・20制約は実DBの観測であり、この表の列を追加済みとは扱わない。DDL・制約名・適用履歴はコーディング移行後の該当Stepで作成し、Q-25で空DB/既存コピーの両方を確認する。
+以下は既存7テーブルを維持して承認済みの条件を実現する目標設計。usersはStep 1、leagues/league_membersは上記2-1の範囲を実装済み。残りは未適用。前半の39列・20制約は実DBの観測であり、この表の列を追加済みとは扱わない。DDL・制約名・適用履歴はコーディング移行後の該当Stepで作成し、Q-25で空DB/既存コピーの両方を確認する。
 
 | 対象 | 追加・変更する型と状態 | 制約・更新境界 |
 | --- | --- | --- |
