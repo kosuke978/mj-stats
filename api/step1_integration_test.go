@@ -10,6 +10,7 @@ import (
 	"encoding/base64"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"io"
 	"math/big"
 	"net/http"
@@ -24,6 +25,7 @@ import (
 	"github.com/golang-jwt/jwt/v5"
 	"github.com/joho/godotenv"
 	"github.com/kosuke/mj-stats-api/auth"
+	"github.com/lib/pq"
 )
 
 type authSession struct {
@@ -361,13 +363,38 @@ func TestStep1RealDBAuth(t *testing.T) {
 			t.Fatal("API role has excessive privileges")
 		}
 	}
-	for _, role := range []string{"anon", "authenticated"} {
+	for _, role := range []string{"anon", "authenticated", "service_role"} {
 		var allowed bool
 		if admin.QueryRowContext(ctx, `SELECT has_function_privilege($1,'mjstats_private.valid_session(uuid,uuid)','EXECUTE')`, role).Scan(&allowed) != nil || allowed {
 			t.Fatal("public function execute allowed")
 		}
 	}
+	var limited bool
+	if admin.QueryRowContext(ctx, `SELECT NOT has_schema_privilege('mjstats_auth_validator','auth','USAGE')
+    AND NOT has_any_column_privilege('mjstats_auth_validator','auth.users','SELECT,UPDATE')
+    AND NOT has_any_column_privilege('mjstats_auth_validator','auth.sessions','SELECT,UPDATE')
+    AND NOT has_table_privilege('mjstats_api','mjstats_private.auth_subjects','SELECT,UPDATE')
+    AND NOT has_table_privilege('mjstats_api','mjstats_private.auth_sessions','SELECT,UPDATE')
+    AND NOT EXISTS(SELECT FROM pg_policy WHERE polrelid IN ('auth.users'::regclass,'auth.sessions'::regclass) AND polname LIKE 'mjstats_validator_%')`).Scan(&limited) != nil || !limited {
+		t.Fatal("managed Auth validation has excessive or obsolete privileges")
+	}
+	// Even the NOLOGIN function owner cannot mutate the projected Auth metadata.
+	privTx, err := admin.BeginTx(ctx, nil)
+	if err != nil {
+		t.Fatal("view privilege test transaction")
+	}
+	if _, err = privTx.ExecContext(ctx, `GRANT mjstats_auth_validator TO postgres; SET LOCAL ROLE mjstats_auth_validator;`); err != nil {
+		t.Fatal("view privilege test role")
+	}
+	_, err = privTx.ExecContext(ctx, `UPDATE mjstats_private.auth_subjects SET id=id WHERE id=$1`, uid)
+	var denied *pq.Error
+	if !errors.As(err, &denied) || denied.Code != "42501" {
+		_ = privTx.Rollback()
+		t.Fatal("Auth metadata view allowed update")
+	}
+	_ = privTx.Rollback()
 	t.Log("Q-25 Step 1 permissions PASS: no API direct Auth read/update or participant delete; no public function execution")
+	t.Log("Q-25 local managed-compatible permissions PASS: NOLOGIN validator has no Auth schema/table access; private projection updates rejected; no custom Auth RLS policy required")
 
 	// The local logout must wait behind an already-authorized write's shared locks.
 	var ac auth.Claims

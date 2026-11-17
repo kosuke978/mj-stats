@@ -6,6 +6,7 @@ import (
 	"database/sql"
 	"encoding/json"
 	"errors"
+	"flag"
 	"fmt"
 	"github.com/joho/godotenv"
 	"github.com/lib/pq"
@@ -21,14 +22,21 @@ func main() {
 		code := ""
 		if errors.As(err, &pg) {
 			code = string(pg.Code)
- if strings.Contains(pg.Message,"Tenant or user not found") { code += " (pooler tenant/user lookup failed)" }
+			if strings.Contains(pg.Message, "Tenant or user not found") {
+				code += " (pooler tenant/user lookup failed)"
+			}
 		}
 		fmt.Fprintf(os.Stderr, "Read-only legacy snapshot failed: type=%T sqlstate=%s (details withheld)\n", err, code)
 		os.Exit(1)
 	}
 }
 func run() error {
-	env, err := godotenv.Read(".env")
+	source := flag.String("env", ".env", "source environment file (read-only)")
+	flag.Parse()
+	if flag.NArg() != 1 || !strings.HasSuffix(flag.Arg(0), ".json") {
+		return fmt.Errorf("output required")
+	}
+	env, err := godotenv.Read(*source)
 	if err != nil {
 		return err
 	}
@@ -60,6 +68,9 @@ func run() error {
 	queries := map[string]string{
 		"columns":     `SELECT COALESCE(jsonb_agg(to_jsonb(c) ORDER BY table_name,ordinal_position),'[]') FROM (SELECT table_name,column_name,ordinal_position,data_type,udt_name,is_nullable,column_default,character_maximum_length,numeric_precision,numeric_scale FROM information_schema.columns WHERE table_schema='public' AND table_name IN ('users','leagues','league_members','seasons','rules','matches','match_results')) c`,
 		"constraints": `SELECT jsonb_agg(to_jsonb(c) ORDER BY table_name,conname) FROM (SELECT t.relname table_name,c.conname,c.contype,pg_get_constraintdef(c.oid) definition,c.convalidated FROM pg_constraint c JOIN pg_class t ON t.oid=c.conrelid JOIN pg_namespace n ON n.oid=t.relnamespace WHERE n.nspname='public' AND t.relname IN ('users','leagues','league_members','seasons','rules','matches','match_results')) c`,
+		"indexes":     `SELECT COALESCE(jsonb_agg(to_jsonb(i) ORDER BY tablename,indexname),'[]') FROM (SELECT tablename,indexname,indexdef FROM pg_indexes WHERE schemaname='public' AND tablename IN ('users','leagues','league_members','seasons','rules','matches','match_results')) i`,
+		"policies":    `SELECT COALESCE(jsonb_agg(to_jsonb(p) ORDER BY tablename,policyname),'[]') FROM (SELECT tablename,policyname,permissive,roles,cmd,qual,with_check FROM pg_policies WHERE schemaname='public' AND tablename IN ('users','leagues','league_members','seasons','rules','matches','match_results')) p`,
+		"triggers":    `SELECT COALESCE(jsonb_agg(to_jsonb(t) ORDER BY table_name,trigger_name),'[]') FROM (SELECT c.relname table_name,t.tgname trigger_name,pg_get_triggerdef(t.oid) definition FROM pg_trigger t JOIN pg_class c ON c.oid=t.tgrelid WHERE c.relnamespace='public'::regnamespace AND NOT t.tgisinternal AND c.relname IN ('users','leagues','league_members','seasons','rules','matches','match_results')) t`,
 		"rls":         `SELECT jsonb_agg(to_jsonb(c) ORDER BY relname) FROM (SELECT relname,relrowsecurity,relforcerowsecurity FROM pg_class WHERE relnamespace='public'::regnamespace AND relname IN ('users','leagues','league_members','seasons','rules','matches','match_results')) c`,
 	}
 	for name, query := range queries {
@@ -91,10 +102,7 @@ func run() error {
 	if err != nil {
 		return err
 	}
-	if len(os.Args) != 2 || !strings.HasSuffix(os.Args[1], ".json") {
-		return fmt.Errorf("output required")
-	}
-	if err = os.WriteFile(os.Args[1], raw, 0600); err != nil {
+	if err = os.WriteFile(flag.Arg(0), raw, 0600); err != nil {
 		return err
 	}
 	summary, _ := json.Marshal(counts)

@@ -1,6 +1,6 @@
 # 環境構築と運用
 
-この手順は現在のリポジトリ構成に基づく。Step 1ブランチに専用ローカルDB/Auth/メールとbaseline・認証migrationを追加した。本番デプロイ設定は未整備で、共有環境へは未適用。共有Supabase接続問題の調査・復旧・再試行は開発者の2026-11-17の追加指示で停止している。
+この手順は現在のリポジトリ構成に基づく。Step 1ブランチに専用ローカルDB/Auth/メールとbaseline・認証migrationを追加した。開発者の再開指示後、共有DBをREAD ONLYで取得し実コピーへの増分を検証、新設の専用QAへmigrationを適用した。本番デプロイ設定は未整備で、元の共有環境へは未適用。
 
 ## 必要なもの
 
@@ -71,7 +71,7 @@ npm run supabase -- start
 npm run local:prepare
 ```
 
-local:initは既存鍵を保持し、なければGit管理外のsupabase/signing_keys.jsonへES256鍵を作る。CLIが設定済み鍵を先に読むため、初回は空配列を作ってからgen signing-key --appendを内部実行する。鍵をターミナルへ出さない。local:prepareはDockerのproject labelと専用ポート・Auth URLを照合し、Auth所有者の権限SQL、専用APIロールのランダムパスワード、.local/api.env・web.env・acceptance.jsonを設定する。既存api/.envとweb/.env.localは変更しない。prepareを再実行すると検証用秘密値を更新するため、稼働中のGo/Webは再起動する。
+local:initは既存鍵を保持し、なければGit管理外のsupabase/signing_keys.jsonへES256鍵を作る。CLIが設定済み鍵を先に読むため、初回は空配列を作ってからgen signing-key --appendを内部実行する。鍵をターミナルへ出さない。local:prepareはDockerのproject label・専用ポート・Auth URLとD-41の権限を照合し、専用APIロールのランダムパスワード、.local/api.env・web.env・acceptance.jsonを設定する。Auth所有者の権限は使わない。既存api/.envとweb/.env.localは変更しない。prepareを再実行すると検証用秘密値を更新するため、稼働中のGo/Webは再起動する。
 
 ```bash
 # 別ターミナルで起動。既存.envより専用環境変数を優先する。
@@ -82,15 +82,15 @@ node scripts/run-local.mjs web-build
 node scripts/run-local.mjs web-start
 ```
 
-`web`と`web-start`を同じポートで同時起動しない。確認/回復のメールテンプレートはSupabaseのtoken_hashを/auth/confirmへ渡す。Site URL/許可URLをlocalhost:3000に固定し、確認必須・匿名Authなし・8文字以上のパスワード・refresh rotationを有効にする。OTP期限は3600秒、通常セッションに独自のtimebox/inactivity timeoutは設定しない。Mailpitは外部配送の代替であり、外部SMTPの到達性は未確認。
+`web`と`web-start`を同じポートで同時起動しない。確認/回復のメールテンプレートはSupabaseのtoken_hashを/auth/confirmへ渡す。Site URL/許可URLをlocalhost:3000に固定し、確認必須・匿名Authなし・8文字以上のパスワード・refresh rotationを有効にする。OTP期限は3600秒、通常セッションに独自のtimebox/inactivity timeoutは設定しない。Mailpitはローカルの捕捉用。管理QAではMailtrap Sandboxへの実SMTP配送と確認/回復を開発者が確認した。実利用者への外部配送は公開前に別途確認する。
 
 ### migrationとAuth権限の適用
 
-- 空の専用スタック：CLI start/resetが `20261117000000_baseline.sql` → `20261117001000_auth_profile.sql` を適用する。その後local:prepareで `supabase/permissions/step1_auth.sql` をAuth所有者/管理者として適用する。共有ロールやブラウザに管理者権限を与える手順ではない。
-- baselineは観測済み7表39列20制約9 indexを再現する。既存DBへCREATE TABLEを再実行しない。既存環境の正確な構造・制約・RLSを照合した後だけbaselineを履歴へ記録し、増分を適用する。今回は共有DBへ接続問題があり、開発者指示で実コピーの取得・照合・増分受入を停止した。
-- `node scripts/test-migrations.mjs` は識別済みコンテナ内の使い捨てDBで、Authメタデータ契約と合成旧データを用意して増分と再適用拒否を確認する。実共有コピーの代用としてPASSへ数えない。生成した一時DBだけをfinallyで削除する。
-- Auth表の所有者はsupabase_auth_admin、postgresは通常migration用。ローカルではschema USAGE・UPDATE(id)の再GRANTとAuth policy作成をpostgresだけでは行えなかった。D-40の権限SQLをローカル管理者supabase_adminで適用する。管理環境で同じ限定権限を確保できるかは未確認で、共有適用の前提条件として残る。
-- 関数所有はNOLOGIN/NOBYPASSRLSで7列SELECTと共有ロックに必要なidのUPDATEだけ。RLS policyはそのロールだけ、実UPDATEはWITH CHECK(false)で拒否。通常APIロールにAuth直接SELECT/UPDATEや参加者DELETEは与えない。関数のPUBLIC/anon/authenticated EXECUTEも拒否する。
+- 空の専用スタック：CLI start/resetが `20261117000000_baseline.sql` → `20261117001000_auth_profile.sql` → `20261117002000_managed_auth_validation.sql` を通常postgresとして適用する。D-40の旧 `supabase/permissions/step1_auth.sql` は適用しない。
+- baselineは観測済み7表39列20制約9 indexを再現する。既存DBへCREATE TABLEを再実行しない。既存環境の正確な列・制約・index・RLS・policy・triggerを照合した後だけbaselineを履歴へ記録し、増分を適用する。再開後の実コピーで一致と増分保全を確認した。元の共有DBには適用しない。
+- `node scripts/test-migrations.mjs` は識別済みコンテナ内の使い捨てDBで、Authメタデータ契約と合成旧データを用意して増分と再適用拒否を確認する。`--snapshot .local/legacy-actual-20261117.json` を指定すると実コピーの構造を照合し、全元列値・参照を比較する。元のスナップショットは `api` で `go run ./cmd/legacy-snapshot ../.local/legacy-actual-20261117.json` によりREAD ONLY取得する。生成した一時DBだけをfinallyで削除する。
+- D-41ではpostgres所有の非公開viewを通じて限定7列と行ロックを委譲する。関数所有はNOLOGIN/NOBYPASSRLS、viewのSELECT/UPDATE(id)だけでAuthへの直接権限は持たない。viewへの実UPDATEはtriggerで拒否する。AuthのRLS/policyを変更せず、所有者やsupabase_adminの追加作業を要求しない。
+- 通常APIロールにAuth/view直接SELECT/UPDATEや参加者DELETEは与えない。関数のPUBLIC/anon/authenticated/service_role EXECUTEも拒否する。旧方式を適用したローカルは識別を確認してfresh resetする。共有/管理環境のresetへ転用しない。
 
 検証用resetは `npm run supabase -- db reset --local --yes`。project_id/コンテナlabel/55422を確認した専用環境だけで行い、直後にlocal:prepareとGo/Web再起動を行う。元の共有5参加者・19対局は変更しない。ローカル停止は `npm run supabase -- stop` でデータを保持する。認証なしの旧APIを公開状態へ戻すことを復旧手段にしない。
 
@@ -115,6 +115,25 @@ npm run test:browser
 Goの通常go testは実環境試験をSKIPする。実環境試験は.localのURLが正確にloopback:55421/55422である場合だけ実行し、実Auth Admin APIでfixtureを作る。Webのブラウザ試験はメール受信箱と実Auth/DBを使用し、確認URL・JWTを出力しない。trace/videoは無効、個人データを含み得る結果はGit管理外の.localに保存する。Chromiumは独立したテスト環境で、Safari/実機の受入の代わりにはしない。
 
 通常の `npm run build` が共有.env.localを読む環境では、今回の検証と同じ設定にするためルートのweb-build helperを使う。今回の実行結果・限定ケース・未実施は [品質文書](quality-and-acceptance.md#step-1実装ブランチの検証記録2026-11-17) を参照する。
+
+実時間の期限切れ・再送・回復時の障害は、ルートの `npm run test:auth-expiry` で実行する。識別済みローカルだけOTP期限を一時2秒にし、Auth再起動後に登録/回復の期限切れと再送、Authコンテナ停止中の503、復旧後の更新を試す。finallyで元の設定と3600秒のスタックへ戻す。DBデータは保持する。中断時は `.local/expiry-original-config.toml` と設定を照合して通常設定へ戻してから再開する。管理環境へこの故障注入を行わない。
+
+### 専用の管理Supabase QA環境
+
+元の共有プロジェクトへ書き込まず、開発者が用意した **mj-stats-step1-qa** を使う。今回のRefは `ndwjiiqhliwjpsqqoarg`。DB/Authとも新設時の空を読み取り確認した。ローカル識別名mj-stats-step1をremoteへlinkせず、`.local/managed-project` の中だけに関連付ける。
+
+1. `npm run supabase -- login` を開発者が行う。秘密トークンをチャットや文書へ貼らない。
+2. `.local/managed-project/supabase` を作り、[QA設定例](../supabase/config.qa.example.toml)を `config.toml` としてコピーする。`supabase/templates` の2ファイルも同じ相対配置でこの専用ディレクトリ内へコピーする。CLIはworkdir外のcontent_pathを拒否する。
+3. `npm run supabase -- link ndwjiiqhliwjpsqqoarg --workdir .local/managed-project` を実行する。以後のremoteコマンドもRefを明示し、プレビューのtargetを照合する。
+4. `npm run supabase -- db push --remote=ndwjiiqhliwjpsqqoarg --dry-run --skip-vault` で3本だけを確認し、同じ指定で `--dry-run` を外して `--yes` を付ける。空環境向けbaselineであり、既存7表がある環境にこの手順を使わない。
+5. QAのDatabase SettingsからSSLのCA証明書をダウンロードし、Git管理外の `.local/supabase-ca.crt` へ置く。verify-fullとsslrootcertで証明書・ホスト名を確認する。[SupabaseのSSL手順](https://supabase.com/docs/guides/platform/ssl-enforcement)を参照する。
+6. QAのCustom SMTPを検証専用の配送先へ設定する。新規Freeは標準配送中のメール本文変更ができない（D-42）。[Mailtrap Email Sandbox](https://docs.mailtrap.io/getting-started/email-sandbox)等の受信箱を使い、検証メールを外部利用者へ送らない。SMTP資格情報はDashboardまたはGit管理外の専用ファイルで扱う。
+7. `npm run supabase -- config diff --remote=ndwjiiqhliwjpsqqoarg --workdir .local/managed-project` のAuth差分を確認し、同じ対象へ `config push ... --yes` で反映する。独自SMTP設定はQA設定例で宣言せず、上書きしない。CLIのJSON結果に `_tag: Error` があれば、終了コードにかかわらず失敗として扱う。
+8. `node scripts/prepare-managed.mjs ndwjiiqhliwjpsqqoarg` は名称/Ref/稼働/履歴を照合し、QAのmjstats_apiだけのパスワードと `.local/managed-{api,web}.env`、managed-acceptance.jsonを設定する。通常Go接続には管理者パスワードを使わない。再実行後はQAのGo/Webを再起動する。
+
+QAのGoは `node scripts/run-managed.mjs api`（localhost:8081）。Webは `node scripts/run-managed.mjs web-build` → `node scripts/run-managed.mjs web-start`（localhost:3001）。公開Auth URLをビルド時に固定するため、QAは `.next-qa`、ローカルは `.next` へ分離する。これはローカルでQAサービスに接続する検証で、本番へのデプロイではない。
+
+`api` の `MJSTATS_MANAGED_INTEGRATION=1 GIN_MODE=release go test -run TestStep1ManagedSupabase -count=1 -v .` で実QAのES256/JWKS、専用APIロール、初回/並行me、名前、公開/直接権限拒否、並行local signOut/Auth削除と元IDの保全を確認する。管理CLIのSQLも専用QAに固定する。負の署名fixture全種と旧対局契約の回帰はローカルの包括試験を使い、管理環境で実施した範囲と混同しない。作成するのはQA用主体と参照だけで、共有のコピーや本人情報をQAへ流用しない。
 
 ## 起動
 
@@ -150,7 +169,7 @@ seedを使う前に、専用DBの実スキーマを確認する。
 4. `ON CONFLICT` の対象となるPK/UNIQUEがあることを確認する。`users` 等は衝突時に名前を更新するため、無害な読み取り操作ではない。
 5. 接続先が開発用であることと影響を確認した上で、SQL Editor等から投入する。
 
-seed単独では新しいDBを構築できない。Step 1のbaseline/認証migrationを先に適用する。共有実コピーとの再照合は未実施。古いPostman READMEの「ルール1件だけ作成するSQL」は、leagueや必須項目の制約に適合するか未確認なので、そのまま初期構築手順に使わない。
+seed単独では新しいDBを構築できない。Step 1のbaseline/認証migrationを先に適用する。再開後の共有実コピーとbaselineの列・制約・index・RLS等の一致は確認済み。古いPostman READMEの「ルール1件だけ作成するSQL」は、leagueや必須項目の制約に適合するか未確認なので、そのまま初期構築手順に使わない。
 
 共有DBの実体記録は過去の観測。Step 1 migrationは専用ローカルだけに適用し、共有には適用していない。また、ルール2件はleague_idがNULLだった。seedは既存ruleの衝突時にnameだけを更新するため、単に再実行しても所属は補完されない。既存の帰属を確認して移行方針を決める。
 
@@ -195,9 +214,9 @@ v2.0ではhealth → me → 名前設定 → calculate/create/getの順で確認
 
 ## Step 1以降の運用確認
 
-D-26の自己登録には、SupabaseのEmail確認設定、確認後URL/ローカルと公開環境の許可URL、メール配送の実設定が必要。現設定は未確認。[SupabaseのSMTP資料](https://supabase.com/docs/guides/auth/auth-smtp) は標準メール配送を一般公開の本番用途に適さないものとし、プロジェクトチーム外への配送に独自SMTP設定を要求している。項目11で配送サービス・送信元・設定・確認環境を決め、実利用者向け公開前に到達と確認後の導線を検証する。設計中にSMTP契約・設定変更・実メール送信は行わない。
+D-26の自己登録には、SupabaseのEmail確認設定、確認後URL/ローカルと公開環境の許可URL、メール配送の実設定が必要。専用QAの設定とSandboxまでの受信は確認済み。共有/本番の実設定は未確認。[SupabaseのSMTP資料](https://supabase.com/docs/guides/auth/auth-smtp) は標準メール配送を一般公開の本番用途に適さないものとし、プロジェクトチーム外への配送に独自SMTP設定を要求している。項目11で配送サービス・送信元・設定・確認環境を決め、実利用者向け公開前に到達と確認後の導線を検証する。設計中にSMTP契約・設定変更・実メール送信は行わない。
 
-D-30の本人によるパスワード再設定も同じ配送基盤を使い、回復後の許可URLと専用確認環境を整える。アプリ側へSMTP資格情報やパスワードの独自保存を増やさない。登録確認と回復のメール・URLを区別して、期限切れ・再送・更新失敗をQ-21で確認する。現設定・実配送・回復の受入は未確認。
+D-30の本人によるパスワード再設定も同じ配送基盤を使い、回復後の許可URLと専用確認環境を整える。アプリ側へSMTP資格情報やパスワードの独自保存を増やさない。登録確認と回復のメール・URLを区別して、期限切れ・再送・更新失敗をQ-21で確認する。専用ローカルと管理QAで確認/回復を受け入れた。実利用者への配送は公開前に別途確認する。
 
 - JWTなしでme・計算・保存・履歴が401、healthが200になることを確認する。
 - 正しいJWTでmeを取得し、自分のUIDに対応するDBレコードを確認する。seedの固定UUIDを本人UIDの代用にしない。
@@ -243,7 +262,7 @@ D-30の本人によるパスワード再設定も同じ配送基盤を使い、�
 
 Go用はテーブル所有者/BYPASSRLSを使わない専用ロール `mjstats_api` とする。必要なアプリ表だけのSELECT/INSERT/限定UPDATEを許可し、履歴・参加者・所属・ルールを物理DELETEする権限は付与しない。RLS有効のアプリ表にはこの専用ロール向けのサービス用policyを明示し、ブラウザのanon/authenticatedへ同じpolicyやGRANTを開かない。これは利用者別RLSの代替ではなく、Goでリーグ認可を実行する境界である。
 
-Auth主体/セッション検証は公開しないschemaのSECURITY DEFINER関数へ限定する。入力は検証済みsub/session_id、出力は有効性だけ。関数所有のNOLOGINロールに必要列と行ロックに必要な権限を限定し、Go用ロールへAuth管理表の広いSELECT/UPDATEを付与しない。関数は完全修飾したAuth表を固定SQLで読み、主体→sessionの順に共有ロックし、時計・メール確認/停止/削除/not_afterを判定する。Auth表の値をアプリ独自に更新しない。
+Auth主体/セッション検証は公開しないschemaのSECURITY DEFINER関数へ限定する。入力は検証済みsub/session_id、出力は有効性だけ。D-41に従い、関数所有のNOLOGINロールへpostgres所有viewの必要列と行ロック権限だけを与え、Authへの直接権限を与えない。関数は完全修飾したviewを固定SQLで読み、元のAuth行を主体→sessionの順に共有ロックし、時計・メール確認/停止/削除/not_afterを判定する。Auth表の値をアプリ独自に更新しない。
 
 関数作成とPUBLICのEXECUTE剥奪・Goロールへの限定EXECUTEは同一migrationで行い、search_pathは信頼できるschemaと最後のpg_tempに固定する。[PostgreSQLのSECURITY DEFINERの注意事項](https://www.postgresql.org/docs/17/sql-createfunction.html#SQL-CREATEFUNCTION-SECURITY)を適用する。Goは各要求の署名/claims検証の後に呼び、書込みtx内の共有ロックをcommit/rollbackまで維持する。ロック取得に失敗したら検証を省略せず503にする。
 

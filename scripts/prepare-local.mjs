@@ -10,9 +10,14 @@ if (!config.includes('project_id = "mj-stats-step1"') || existsSync('supabase/.t
 const container = 'supabase_db_mj-stats-step1'
 const info = JSON.parse(execFileSync('docker', ['inspect', container], { encoding: 'utf8' }))[0]
 if (info.Config.Labels['com.supabase.cli.project'] !== 'mj-stats-step1' || !info.NetworkSettings.Ports['5432/tcp'].some(p => p.HostPort === '55422')) throw new Error('Unexpected local DB')
-execFileSync('docker', ['exec', '-i', container, 'psql', '-U', 'supabase_admin', '-d', 'postgres', '-v', 'ON_ERROR_STOP=1'], {
-  input: readFileSync('supabase/permissions/step1_auth.sql'), stdio: ['pipe', 'ignore', 'pipe'],
-})
+const permissions = execFileSync('docker', ['exec', '-i', container, 'psql', '-X', '-A', '-t', '-U', 'postgres', '-d', 'postgres', '-v', 'ON_ERROR_STOP=1'], {
+  input: `SELECT to_regclass('mjstats_private.auth_subjects') IS NOT NULL
+    AND NOT has_schema_privilege('mjstats_auth_validator','auth','USAGE')
+    AND NOT has_table_privilege('mjstats_api','auth.users','SELECT')
+    AND has_function_privilege('mjstats_api','mjstats_private.valid_session(uuid,uuid)','EXECUTE');`,
+  encoding: 'utf8', stdio: ['pipe', 'pipe', 'pipe'],
+}).trim()
+if (permissions !== 't') throw new Error('Apply the managed Auth validation migration to the dedicated local database; legacy Auth-owner permissions are unsupported')
 const raw = execFileSync('node_modules/.bin/supabase', ['status', '-o', 'json', '--agent', 'no'], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] })
 const status = JSON.parse(raw)
 if (status.API_URL !== 'http://127.0.0.1:55421') throw new Error('Unexpected local Auth')

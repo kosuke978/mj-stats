@@ -68,8 +68,10 @@ export async function POST(request: NextRequest) {
   const updated = await supabase.auth.updateUser({ password })
   if (updated.error)
     return fail(
-      400,
-      '更新できませんでした。パスワードを変更して再試行してください。',
+      updated.error.status === 0 || (updated.error.status ?? 0) >= 500
+        ? 503
+        : 400,
+      '更新できませんでした。時間をおいて再試行してください。',
     )
   store.set(recoveryCookie, '', { ...recoveryOptions, maxAge: 0 })
   return NextResponse.json(

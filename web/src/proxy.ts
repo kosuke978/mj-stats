@@ -1,6 +1,7 @@
 import { NextResponse, type NextRequest } from 'next/server'
 import { createServerClient } from '@supabase/ssr'
 import { loginPath, safeReturnTo } from '@/lib/auth/paths'
+import { authFetch } from '@/lib/supabase/fetch'
 
 export async function proxy(request: NextRequest) {
   const path = request.nextUrl.pathname
@@ -11,6 +12,7 @@ export async function proxy(request: NextRequest) {
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
     process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
     {
+      global: { fetch: authFetch },
       cookies: {
         getAll: () => request.cookies.getAll(),
         setAll(values, authHeaders) {

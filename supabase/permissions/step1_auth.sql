@@ -1,7 +1,13 @@
--- Auth-table owner / administrator phase, after normal migrations.
+-- Historical local-only fallback, superseded by migration 20261117002000.
+-- Do not apply to hosted Supabase or a current installation.
 -- Local only via scripts/prepare-local.mjs. No shared/hosted application here.
 -- No Auth columns, credentials, or rows are changed. Keep this after each reset.
 BEGIN;
+DO $$ BEGIN
+  IF to_regclass('mjstats_private.auth_subjects') IS NOT NULL THEN
+    RAISE EXCEPTION 'Obsolete Auth permission SQL: use the managed Auth validation migration';
+  END IF;
+END $$;
 GRANT USAGE ON SCHEMA auth TO mjstats_auth_validator;
 GRANT UPDATE (id) ON auth.users, auth.sessions TO mjstats_auth_validator;
 -- The role has no login, membership, schema CREATE, or BYPASSRLS. It can only
