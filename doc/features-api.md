@@ -1,35 +1,38 @@
 # 実装済み機能とAPI契約
 
-前半は基準コミット `12760ca` のコード上の挙動、後半の『目標API契約』『目標画面・状態・導線』は2026-11-17に統合した未実装の設計を記録する。画面・APIの実装があるものも、実DB・実ブラウザで今回動作確認したわけではない。要求は [requirements.md](requirements.md)、工程は [product-roadmap.md](product-roadmap.md)、設計条件は [architecture.md](architecture.md) を参照する。
+前半はStep 1作業ブランチの現行実装。認証・本人情報以外の対局契約は基準コミット `12760ca` を維持する。後半はPhase 2.5全体の目標で、Step 2以降は未実装。Step 1の実行結果・未実施は [品質・受入](quality-and-acceptance.md#step-1実装ブランチの検証記録2026-11-17) を参照する。要求は [requirements.md](requirements.md)、工程は [product-roadmap.md](product-roadmap.md)、設計条件は [architecture.md](architecture.md) を参照する。
 
 ## 画面と利用フロー
 
 | URL | 実装されていること | 制限・未完了 |
 | --- | --- | --- |
-| `/login` | メール・パスワードでSupabaseの `signInWithPassword` を呼び、処理中・エラーを表示。成功後 `/matches` へ移動 | me APIの呼び出しと全体のユーザー状態共有がない。サインアップ・パスワード再設定・ログアウトUIなし |
+| `/login`、`/signup` | Supabaseのログイン・自己登録・確認待ち・再送。安全なreturnToと初回名前設定へ接続 | メールの実外部配送と共有環境での受入は未実施 |
+| `/auth/confirm`、`/auth/error` | email/recoveryのtoken_hashをverifyOtpで検証、更新Cookieを保持して303、失敗から再依頼 | 確認URLはログに出さない。通常のメールリンクに加えPKCEのhashも扱う |
+| `/password/reset`、`/password/update` | 回復依頼・確認後の本人による新パスワード設定 | 回復確認に紐付く短期の署名Cookieを要求。資格情報はSupabaseへ |
+| `/profile/setup`、`/account` | 初回表示名・本人の名前変更・localログアウト、共通本人状態 | 初回未設定は通常画面へ進めず、Goでも403 |
 | `/matches/new` | 4人の選択・持ち点入力、ポイント計算プレビュー、保存、履歴へのリンク | メンバー5名が固定。ゲスト保存不可。rule IDは環境変数、seasonはnull |
-| `/matches` | Server Componentで履歴を取得、カード表示、入力画面へのリンク、空状態、読み込みスケルトン | BearerなしでGoを呼ぶ。全件取得。リーグ・シーズン絞り込みとページングなし |
+| `/matches` | Server Componentで履歴を取得、カード表示、入力画面へのリンク、空状態、読み込みスケルトン | 本人のBearerでGoを呼ぶ。全件取得。リーグ・シーズン絞り込みとページングなし |
 | `/` | create-next-appの初期画面 | プロダクトのホーム未実装。共通のBottom Navigationなし |
 
-`web/src/middleware.ts` はSupabaseの `getUser()` で確認し、未ログインの `/matches` で始まるパスを `/login` へ移す。matcherは画像等を除く広い範囲だが、リダイレクト条件自体は `/matches` 配下のみ。これはGo APIへの直接アクセス制御ではない。
+`web/src/proxy.ts` が検証・必要なセッション更新とCookie転送を担当する。保護ページは `/matches` 配下・`/profile/setup`・`/account`・`/password/update`。Server Componentでも本人を確認し、Goが各要求のJWT/主体/セッションを独立に検証する。共通Providerは表示用であり認可の根拠ではない。
 
 ### 現行の画面状態と次にできる操作
 
-以下はコードで確認した状態で、実ブラウザでの確認結果ではない。画面を変更する際は「正常表示」だけでなく、操作中・空・失敗・復帰を比較する。
+実装の状態を記す。どの操作を実行したかは品質文書へ分ける。画面を変更する際は「正常表示」だけでなく、操作中・空・失敗・復帰を比較する。
 
 | 画面・状態 | 現在の表示・処理 | 次の操作・遷移 | 制限 |
 | --- | --- | --- | --- |
-| ログイン・初期 | メールとパスワードの入力 | 送信する | 登録・再設定への導線なし |
-| ログイン・送信中 | ボタンを無効化し処理中表示 | 応答を待つ | 本人のme取得はまだ行わない |
-| ログイン・失敗 | エラーを表示し送信可能に戻す | 入力を修正して再送 | Authエラーと一般例外を表示。アプリ全体の認証状態共有なし |
-| ログイン・成功 | `/matches` へpushしてrefresh | 履歴へ進む | Go APIの保護や本人情報の確立が完了したという意味ではない |
-| 履歴・読込み中 | loading.tsxのスケルトン | 応答を待つ | 取得はBearerなしのSSR |
+| ログイン・初期 | メールとパスワードの入力 | 送信、登録、再設定へ | セッション有効なら入力を省略 |
+| ログイン・送信中 | ボタンを無効化し処理中表示 | 応答を待つ | 成功後の保護画面でGoのmeを取得 |
+| ログイン・失敗 | エラーを表示し送信可能に戻す | 入力を修正して再送 | メール確認待ち・入力失敗・通信障害を区別 |
+| ログイン・成功 | 安全な元画面へ移動 | 未設定なら名前設定を優先 | 戻り先なしは `/matches`。リーグ認可はStep 2 |
+| 履歴・読込み中 | loading.tsxのスケルトン | 応答を待つ | 本人のBearer付きSSR |
 | 履歴・0件 | 履歴なしのメッセージ、結果入力リンク | `/matches/new` へ | 所属リーグ別の空状態は未実装 |
 | 履歴・取得成功 | 対局カード一覧 | 結果入力へ | 全件。絞り込み・ページングなし |
-| 履歴・取得失敗 | getMatchesが例外を投げる | 専用の再試行操作は未実装 | matches用error.tsxなし。空一覧へ変換してはいない |
+| 履歴・取得失敗 | 認証失敗は再更新/再ログイン、内部障害はエラー状態 | 再試行する | 失敗を空一覧に変換しない |
 | 入力・不備 | 項目エラー、合計の不足/超過 | 内容を修正しプレビューまたは直接保存 | 正常な入力なら計算へ進む |
-| 入力・計算中 | ボタン無効化と処理中表示 | 応答を待つ | 計算APIにBearerなし |
-| 入力・計算失敗 | APIエラーをフォーム側に表示 | 入力を保ち再試行 | 現状はAPI本文を利用者へ表示する場合がある |
+| 入力・計算中 | ボタン無効化と処理中表示 | 応答を待つ | 計算APIに本人Bearerを付与 |
+| 入力・計算失敗 | APIエラーをフォーム側に表示 | 入力を保ち再試行 | 共通エラーのmessageを表示し入力を保持 |
 | プレビュー・成功 | 順位・ポイントのモーダル | 戻る、または保存 | 保存時のGo再計算なし |
 | 保存・ゲストを含む | 保存未対応のエラー | 登録者に替える、または入力へ戻る | 保存APIを呼ばない。最終要件としては未達 |
 | 保存・処理中 | 保存ボタンを無効化し処理中表示 | 応答を待つ | 二重送信のAPI上の保証はない |
@@ -85,39 +88,34 @@
 
 現在のローカル既定値は `http://localhost:8080`。設定手順は [setup-and-operations.md](setup-and-operations.md)。
 
-| Method / Path | 現在の認証 | 成功 | Step 1完了後の承認済み方針 |
-| --- | --- | --- | --- |
-| `GET /api/health` | なし | 200 | 公開 |
-| `GET /api/users/me` | Bearerの形・解析のみ。署名未検証 | 200 | 正しいJWT必須 |
-| `POST /api/matches/calculate` | なし | 200 | 正しいJWT必須 |
-| `POST /api/matches` | なし | 201 | 正しいJWT必須 |
-| `GET /api/matches` | なし | 200 | 正しいJWT必須 |
+| Method / Path | 現在の条件 | 成功 |
+| --- | --- | --- |
+| `GET /api/health` | 公開、DB疎通 | 200 |
+| `GET /api/users/me` | 検証済みJWT＋有効なAuth主体/セッション | 200 |
+| `PATCH /api/users/me` | 同上。bodyは `{name}` のみ | 200 |
+| `POST /api/matches/calculate` | 上記＋本人の名前設定完了 | 200 |
+| `POST /api/matches` | 上記＋本人の名前設定完了 | 201 |
+| `GET /api/matches` | 上記＋本人の名前設定完了 | 200 |
 
-対局APIは通常JSONを返し、エラーは主に `{"error":"..."}`、一部DBエラーでは `detail` も返す。meの失敗は `http.Error` でJSON風の本文を返すためContent-Typeが通常 `text/plain` になる。現時点で全API共通のエラー契約はない。
+全APIの失敗は後半の共通JSON契約を使う。未認証401、参加者未作成403 PROFILE_REQUIRED、名前未設定403 PROFILE_INCOMPLETE、入力400、media type 415、64KiB超過413、鍵/DB障害503。レスポンスとログにSQL・JWT・接続情報を含めない。CORSは指定originとAuthorization/Content-Type、OPTIONSは認証前。本人応答はprivate, no-store。
 
 ### `GET /api/health`
 
-`database.Ping()` が成功したときの応答：
+DBの5秒以内のPingが成功すると次を返す。失敗は503 TEMPORARILY_UNAVAILABLE。起動時の接続障害は起動を停止する。スキーマ・リーグ認可まで保証するAPIではない。
 
 ```json
 {"status":"ok","message":"MJ-Stats API & DB are running successfully"}
 ```
 
-起動後にDB接続が失敗した場合は500と `status`, `message`, `error`。起動時のDB接続失敗ではサーバー自体が起動しない。ユーザー、ルール、認証、スキーマの適合性までは検証しない。
+### `GET /api/users/me` / `PATCH /api/users/me`
 
-### `GET /api/users/me`
-
-現在も `Authorization: Bearer <access_token>` を要求するが、`ParseUnverified` でpayloadを読むだけ。`sub` が非空文字列なら `users.id` として使用する。署名・期限・issuer・audienceは検証しないため、認証が成立しているとは扱えない。
-
-`email` の `@` より前を初回の名前にし、利用できなければ `Player` を使う。`INSERT ... ON CONFLICT (id) DO UPDATE SET id = EXCLUDED.id` によって作成または取得し、既存の名前は更新しない。
+固定したSUPABASE_URLのES256/JWKSとclaimsを検証し、限定関数でAuth主体・session_idを確認してから、users.auth_idで取得する。GETだけが初回作成を行い、DBが別の参加者UUIDを生成する。初期名はメールを含まないPlayer、名前設定状態はNULL。並行作成はUNIQUE＋ON CONFLICT DO NOTHING＋再取得で同じ参加者へ収束し、既存名を上書きしない。
 
 ```json
-{"id":"11111111-1111-1111-1111-111111111111","name":"Player"}
+{"id":"aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa","name":"Player","profile_completed_at":null}
 ```
 
-Bearerなし、解析失敗、subなしは401。DB書き込み・取得失敗は500。上記IDは型を示す例であり、実アカウントのIDではない。Step 1で署名検証前のユーザー作成を禁止する。
-
-目標との差：D-04によりAuth UIDはauth_idから参加者へ対応付け、D-22により初回表示名を本人が設定してから通常利用する。D-24/D-25により名前は1〜30文字・同名可、本人が変更でき、履歴は現在名を表示する。初回・並行作成と設定状態の処理案は [architecture.md](architecture.md) を参照する。現在のレスポンスには設定状態がなく、本人の表示名を更新するAPIもない。meへの状態追加・更新APIのmethod/path・エラー契約は後半の目標API節に記載した。上記JSONは現行例として残す。
+PATCHは `{ "name": "表示名" }` のみを受け、Unicodeコードポイント1〜30、White_Spaceによる前後除去、Cc/改行/行・段落区切りの事前拒否をGo/Webで共通化する。同名可。他人のid等は400。初回だけprofile_completed_atを名前と同時に設定し、再変更でその時刻・ID・所属・履歴参照を変えない。書込みはtx内でAuth主体→セッションの共有ロックを取得し、期限も書込み/commit前に再確認する。Auth削除はauth_idだけSET NULLとし、古いJWTでの再作成を拒否する。
 
 ### `POST /api/matches/calculate`
 
@@ -174,7 +172,7 @@ IDは形式例。実際にはDBが返した新しいIDを返す。
 
 - bindingで `rule_id` のUUID、4件、非空の `player_id`、rankの1〜4を確認する。参加者ID重複も400にする。
 - `season_id` はGoでnullableな整数（`*int`）。実DBとseedはUUIDであり、不一致を確認済み。UUIDをこのbodyへ送るとbinding段階で拒否される。現在のフォームはnullを送るため問題が表面化しにくい。
-- トランザクションで `matches` 1件、`match_results` 4件を作り、途中失敗ならrollbackする。DB接続・制約・commitの失敗は500。
+- トランザクションで `matches` 1件、`match_results` 4件を作り、途中失敗ならrollbackする。DB接続・制約・commitの失敗は503。旧保存契約の参照整合検証はStep 2〜3で整備し、現時点のFK失敗は共通の内部障害として扱う。
 - `point` は `final_point` へ、`raw_score` と `rank` はそのまま保存する。Goでルール取得・再計算はしない。素点・pointは未指定だと0になる。
 - `is_yakuman` は型として受け取るがINSERTに使用しない。guest名・トビ・座順・対局日時を保存する入力契約はない。
 - `matches.recorded_by` を設定しない。確認した実DBはこの列がnullableで既定値なしなので、省略によるNOT NULL違反はないが記録者を失う。実データでも19対局中18件が未設定だった。
@@ -213,21 +211,21 @@ IDは形式例。実際にはDBが返した新しいIDを返す。
 
 | ID | 事実・影響 | 対応する工程 |
 | --- | --- | --- |
-| T-01 | meの署名未検証で、信用できないsubからユーザーを作成し得る | Step 1 |
-| T-02 | 全対局APIに認証なし。WebのAPI呼び出しにもBearerなし | Step 1。履歴・計算を含め保護する方針は承認済み |
-| T-03 | ユーザー状態共有なし。ログインUIとメンバー・保存者が連動しない | Step 1でユーザー境界、Step 2〜3でデータ接続 |
+| T-01 | Step 1でES256/JWKS・claims・Auth主体/セッション検証を実装 | ローカル受入実施。共有環境は未適用 |
+| T-02 | Step 1で4 APIを共通認証で保護、ブラウザ/SSRのBearer転送を接続 | リーグ所属認可はStep 2 |
+| T-03 | 共通本人Providerと名前設定を実装。対局の固定参加者・記録者は旧契約のまま | Step 2〜3でデータ接続 |
 | T-04 | メンバー固定、rule ID固定、計算ルール固定 | Step 2〜3 |
 | T-05 | 合計点未検証、順位/pointを信用して保存、計算の補正で不正入力を隠す | Step 2でルール基準を確定、Step 3までに保存時検証を完成。先行修正する場合は範囲を承認する |
 | T-06 | ゲストは一時UUIDのみで永続化・保存不可 | Step 3 |
 | T-07 | 履歴のuser_idが名前。IDを失い、同名や改名を正しく扱えない | Step 2〜3の契約整理 |
-| T-08 | season IDがGoでは整数、実DBとseedではUUID。実体の記録は取得済み、適用可能なDDL・マイグレーションなし | 設計確認で型・NULL方針を確定し、Step 2で契約・移行を実装 |
+| T-08 | season IDがGoでは整数、実DBとseedではUUID。baselineとStep 1 migrationは追加済み、season型は未変更 | 設計確認で型・NULL方針を確定し、Step 2で契約・移行を実装 |
 | T-09 | 記録者未保存、リーグ/シーズン/ルールの整合・所属・権限チェックなし | Step 1で認証主体、Step 2で所属者の閲覧・記録境界と記録者、Step 5で管理権限を具体化。D-11/D-12は承認済み |
 | T-10 | 役満入力を保存せず、トビ記録経路もない。表示だけが先行 | Phase 3。先行整備は対象Stepの承認範囲で判断 |
-| T-11 | ホーム初期画面、共通ナビなし。全件履歴、専用エラー画面なし | Step 4。履歴取得方式はデータ量に合わせて見直す |
-| T-12 | `middleware.ts` がNext.js 16の非推奨規約。redirect時に更新Cookieを引き継ぐ処理がない | Step 1で承認済みD-09に従いproxyへ移行し、セッション更新を確認 |
-| T-13 | テストファイル、CI、共通エラー契約がない。SQL詳細を外部へ返す箇所がある | 変更対象ごとに必要な検証・エラー整理を追加 |
-| T-14 | meはAuth UIDをusers.idへ直接保存し、実DBにあるusers.auth_id UUID NULL UNIQUEを利用しない。現5件はauth_id未設定 | 項目2で既存列の活用・未紐付け参加者の扱いを設計し、Step 1/Step 3で承認範囲に従って実装 |
-| T-15 | RLSは全7テーブルで有効だがポリシーなし。同じ接続情報の調査ロールはBYPASSRLS=true | Goで所属・操作権限を検証する。DB側の防御は項目11で具体化 |
+| T-11 | ホーム初期画面、主要ナビなし。全件履歴。認証関連の再試行画面だけ実装 | Step 4。履歴取得方式はデータ量に合わせて見直す |
+| T-12 | `proxy.ts`へ移行し通常/redirect応答へ更新Cookieを転送 | Step 1、実行範囲は品質文書 |
+| T-13 | Goの単体/実DB・Auth試験、Webの単体/Chromium試験と共通エラーを追加。CIは未整備 | 後続の変更ごとに検証を追加 |
+| T-14 | auth_idから別の永続参加者IDを取得する実装へ変更。旧参加者はlegacyとして保持 | 共有実コピーの移行確認は開発者指示で停止中 |
+| T-15 | 専用mjstats_api（NOBYPASSRLS）と限定policyを追加。旧共有DBは観測時の状態のまま | Step 2でGoのリーグ認可を追加。Auth管理者の権限設定は環境手順参照 |
 | T-16 | ルール2件のleague_idがNULLで、対局の所属をrule経由で追えない。18対局のseason/記録者もNULL | 項目4〜7と移行設計で帰属・既存NULLの扱いを確定。推測で補完しない |
 | T-17 | Goのfloat64/math.Round・入力順補正とDBのnumeric(6,1)では、3人同点等の正確な等分をそのまま保全できない | D-07の非丸め方針に沿い、Step 2〜3の計算/API/保存精度と項目11の旧結果保全を統合する。小数桁を増やすだけで循環小数の問題が解決したとはしない |
 | T-18 | 対局日時列がなくcreated_atで代用し、表示のタイムゾーン固定もない | D-16に従いStep 2〜4で対局/入力日時と日本時間表示を整備。D-17の未指定対局を期間だけでシーズンへ自動算入しない |

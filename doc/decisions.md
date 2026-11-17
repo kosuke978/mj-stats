@@ -178,6 +178,7 @@
 
 - 状態・決定者：承認済み。開発者、2026-10-06。
 - 決定：ロードマップの設計確認1〜12を順に進め、すべての設計ドキュメント整備と12の総合レビューを終えてからコーディングへ移る。
+- 2026-11-17の実装着手：開発者が完成したdocを前提にStep 1実装を明示指示。D-20のコーディング移行判断として扱う。Step完了・マージ・Step 2・本番反映の承認は含まない。
 - 当初の進め方：一論点ずつ事実・選択肢・推奨理由を示す方式だった。2026-10-10のD-23により、独立した論点をまとめて判断する方式へ更新した。全1〜12の文書整備後にコーディングする条件と既存9ファイルへの集約は維持する。
 - 効果・注意：設計期間にStep 1だけ先行して実装することも行わない。調査・文書更新は進めるが、アプリ実装・DBへの変更適用は行わない。既存の未決定の選択肢を、この進め方の承認だけで採用済みにはしない。
 - 反映先：[product-roadmap.md](product-roadmap.md)、[development-workflow.md](development-workflow.md)、[AGENTS.md](../AGENTS.md)。完了後は開発者のコーディング移行判断に従い、実装はPhase 2.5 / Step 1から順に進める。
@@ -359,6 +360,15 @@
 - 設計：league_membersで登録者・ゲストを関連付け、参加者種別とAuth紐付け/ログイン可否を区別する。未登録ゲストは1リーグだけに関連付け、Auth解除済み登録者を新規ゲストへ分類し直さない。元IDと本人集計用IDは補助関連で結び付ける。
 - 比較した代替案：usersだけにゲスト所有リーグを持たせ、所属と別の経路で候補・参照を管理する方式。
 - 反映先：[目標データモデル](architecture.md#設計確認11へ渡す目標データモデル)、APIの参加者型、Q-15/Q-25。7つのコアテーブルは維持し、必要な補助表・制約を同じ移行設計で管理する。
+
+### D-40 Step 1のAuth所有者権限とローカル検証
+
+- 状態・設計者：Step 1実装の技術具体化。AI、2026-11-17。業務仕様の変更ではない。共有/本番への適用承認ではない。
+- 実測：CLI 3.2.0 / PostgreSQL 17.12 / Auth v2.198.0の専用スタックではauth.users/auth.sessionsのRLSが有効でpolicyなし。postgresはAuth表/スキーマの所有者ではなく、限定SELECTの再GRANTはできてもUPDATE(id)・schema USAGEの再GRANTやpolicy作成はできない。通常migrationだけで十分という想定では実行時503になった。
+- 採用：通常migrationでアプリ列・専用ロール・固定SQLのSECURITY DEFINER関数・PUBLIC剥奪/Go限定EXECUTEを同時に作る。その後、Auth所有者/管理者が [権限SQL](../supabase/permissions/step1_auth.sql) を適用する。ローカルは識別を確認するprepare-local.mjsでsupabase_adminを用いる。Go用/関数所有の両ロールはNOBYPASSRLS、関数所有はNOLOGIN。限定7列SELECTとidのロック権限、専用SELECT/UPDATE policyだけを付け、UPDATEのWITH CHECK(false)で実更新を拒否する。
+- 比較：GoへAuthの広い権限やBYPASSRLSを渡す案、AuthのRLSを無効化する案は採用しない。設定が足りない場合は503で拒否し、検証を省略しない。
+- 影響：通常migration後と各reset後に明示した所有者権限設定が必要。管理環境でこの権限を確保できるかは共有環境の受入前に確認する。共有Supabase接続問題の調査・復旧・再試行は開発者の追加指示で停止し、共有環境への移行は未実施。
+- パスワード回復：SupabaseのverifyOtp成功後だけ、主体/session_idに紐付く10分のHttpOnly署名Cookieを発行する。Webの更新処理は同一origin・この証明・Goの有効セッション確認を要求し、資格情報の更新自体はSupabaseに委ねる。AUTH_FLOW_SECRETはサーバーだけに保持する。
 
 ## 未決定の設計・運用
 

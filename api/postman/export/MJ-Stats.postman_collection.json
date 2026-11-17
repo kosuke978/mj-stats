@@ -11,15 +11,9 @@
       "request": {
         "method": "GET",
         "header": [],
-        "url": {
-          "raw": "{{base_url}}/api/health",
-          "host": [
-            "{{base_url}}"
-          ],
-          "path": [
-            "api",
-            "health"
-          ]
+        "url": "{{base_url}}/api/health",
+        "auth": {
+          "type": "noauth"
         }
       }
     },
@@ -42,17 +36,7 @@
             }
           }
         },
-        "url": {
-          "raw": "{{base_url}}/api/matches/calculate",
-          "host": [
-            "{{base_url}}"
-          ],
-          "path": [
-            "api",
-            "matches",
-            "calculate"
-          ]
-        }
+        "url": "{{base_url}}/api/matches/calculate"
       }
     },
     {
@@ -74,16 +58,7 @@
             }
           }
         },
-        "url": {
-          "raw": "{{base_url}}/api/matches",
-          "host": [
-            "{{base_url}}"
-          ],
-          "path": [
-            "api",
-            "matches"
-          ]
-        }
+        "url": "{{base_url}}/api/matches"
       }
     }
   ],
@@ -92,5 +67,15 @@
       "key": "base_url",
       "value": "http://localhost:8080"
     }
-  ]
+  ],
+  "auth": {
+    "type": "bearer",
+    "bearer": [
+      {
+        "key": "token",
+        "value": "{{access_token}}",
+        "type": "string"
+      }
+    ]
+  }
 }

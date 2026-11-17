@@ -6,7 +6,9 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "lint": "eslint"
+    "lint": "eslint",
+    "test:auth": "node --experimental-strip-types --test tests/unit/*.test.mjs",
+    "test:browser": "playwright test"
   },
   "dependencies": {
     "@base-ui/react": "^1.4.0",
@@ -27,6 +29,7 @@
     "zod": "^4.1.12"
   },
   "devDependencies": {
+    "@playwright/test": "1.65.1",
     "@tailwindcss/postcss": "^4",
     "@types/node": "^20",
     "@types/react": "^19",

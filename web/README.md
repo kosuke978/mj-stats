@@ -23,6 +23,6 @@ npx tsc --noEmit
 npm run build
 ```
 
-これらに加えて、変更した画面・認証・API通信を [品質・受入確認](../doc/quality-and-acceptance.md) に沿って確認する。現在は独立したテスト基盤がなく、buildの成功だけでログイン等の動作確認済みとは判断しない。
+これらに加えて、変更した画面・認証・API通信を [品質・受入確認](../doc/quality-and-acceptance.md) に沿って確認する。Step 1で `npm run test:auth` と専用ローカルDB/Authを使う `npm run test:browser` を追加した。ビルドだけで受入済みとは判断せず、未実施の端末/共有環境を区別する。
 
 AIエージェントは [AGENTS.md](AGENTS.md) を読み、インストールされたNext.jsの付属ドキュメントを確認する。

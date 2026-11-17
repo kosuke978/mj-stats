@@ -1,7 +1,8 @@
 $kind: http-request
 description: 対局履歴一覧を取得します。
-url: http://localhost:8080/api/matches
+url: "{{base_url}}/api/matches"
 method: GET
 headers:
+  Authorization: "Bearer {{access_token}}"
   Content-Type: application/json
 order: 4000

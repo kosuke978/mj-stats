@@ -1,7 +1,8 @@
 $kind: http-request
-url: http://localhost:8080/api/matches/calculate
+url: "{{base_url}}/api/matches/calculate"
 method: POST
 headers:
+  Authorization: "Bearer {{access_token}}"
   Content-Type: application/json
 body:
   type: json

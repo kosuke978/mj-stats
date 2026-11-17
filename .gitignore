@@ -3,3 +3,9 @@
 
 # Local Go build output
 /api/mj-stats-api
+
+/node_modules/
+/supabase/.temp/
+/supabase/.branches/
+/supabase/signing_keys.json
+/.local/

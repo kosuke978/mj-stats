@@ -1,0 +1,6 @@
+$kind: http-request
+url: "{{base_url}}/api/users/me"
+method: GET
+headers:
+  Authorization: "Bearer invalid.jwt.fixture"
+order: 8000
