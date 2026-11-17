@@ -1,3 +1,5 @@
+> Step 1更新（2026-11-17）: 保護APIは本人のaccess tokenが必須です。v2.0 collectionのhealth → Get Me → Set My Display Name → 計算/保存/履歴の順に使用してください。URLは{{base_url}}、collectionのBearerは{{access_token}}。環境のaccess_tokenはローカル値にだけ入力し、export/共有には含めません。Missing Bearer / Invalid JWTは401が期待値です。旧対局body・数値pointを維持し、リーグ認可は未実装です。書込みは識別済みの専用ローカル/QA DBに限定し、共有DBへ適用しません。QAはAPIのbase_urlをhttp://localhost:8081とし、同じQA Authが発行したtokenを使います。Postman UI実行は今回未実施で、同じAPIの実行証跡はdoc/quality-and-acceptance.mdを参照してください。
+
 # MJ-Stats Postman 実行手順
 
 ## 1) APIを起動

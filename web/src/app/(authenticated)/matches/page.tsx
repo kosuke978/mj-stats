@@ -1,4 +1,5 @@
 import Link from "next/link"
+import { serverAPI } from "@/lib/auth/server"
 
 import { MatchCard } from "@/components/match-card"
 import { buttonVariants } from "@/components/ui/button"
@@ -7,21 +8,7 @@ import type { GetMatchesResponse } from "@/types/match"
 export const dynamic = "force-dynamic"
 
 async function getMatches() {
-  const baseUrl = process.env.NEXT_PUBLIC_API_URL
-
-  if (!baseUrl) {
-    throw new Error("NEXT_PUBLIC_API_URL が設定されていません")
-  }
-
-  const response = await fetch(`${baseUrl}/api/matches`, {
-    cache: "no-store",
-  })
-
-  if (!response.ok) {
-    throw new Error("対局履歴の取得に失敗しました")
-  }
-
-  const data = (await response.json()) as GetMatchesResponse
+  const data = await serverAPI<GetMatchesResponse>("/api/matches", "/matches")
   return data.matches
 }
 

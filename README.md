@@ -9,7 +9,7 @@
 - [ロードマップ](doc/product-roadmap.md)：現在の工程と完了条件。
 - [環境構築・運用](doc/setup-and-operations.md)：必要な環境、設定、起動、確認方法。
 
-現在は **Phase 2.5 / Step 1：認証基盤の完成** に取り組む段階。対局入力・計算・保存・履歴表示の実装はあるが、JWT署名検証、API保護、ゲスト保存、Goでの点数整合性確認には未完了の部分がある。実装範囲と制限は [機能・API仕様](doc/features-api.md) を参照する。
+現在は **Phase 2.5 / Step 1：認証基盤の完成** に取り組む段階。Step 1ブランチにJWT/API保護・本人情報・登録/回復を実装し、専用ローカル環境で検証している。共有実コピーへの増分移行・旧値保全は確認済みで、新設の専用QAで実DB/Auth・メールの主な受入も確認済み。元の共有DBは未変更。リーグ認可・ゲスト保存・Goでの点数整合性確認は後続Step。実装範囲と制限は [機能・API仕様](doc/features-api.md) を参照する。
 
 ## リポジトリ構成
 
@@ -17,10 +17,12 @@
 | --- | --- |
 | `web/` | Next.js / React / TypeScriptのフロントエンド |
 | `api/` | Go / GinのAPIとPostgreSQL接続 |
+| `supabase/` | 専用ローカル環境、migration、限定Auth権限、メールテンプレート |
+| `scripts/` | ローカル/専用QAの設定・起動・移行検証（共有環境へ適用しない） |
 | `api/postman/` | 既存APIのリクエスト例 |
 | `doc/` | 要件、設計、判断、確認、開発・運用手順 |
 
-WebとAPIは別プロセスで起動する。事前にSupabase Authと必要なDBスキーマ・データを準備する。DDL・マイグレーションはまだ管理されておらず、seedだけで新しいDBを構築できる状態ではない。コマンドと環境変数は [構築手順](doc/setup-and-operations.md) に集約する。
+WebとAPIは別プロセスで起動する。事前にSupabase Authと必要なDBスキーマ・データを準備する。専用ローカル環境とbaseline/認証migrationを管理する。seedだけでは初期構築できない。コマンドと環境変数は [構築手順](doc/setup-and-operations.md) に集約する。
 
 ## 開発への参加
 

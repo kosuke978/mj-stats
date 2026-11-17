@@ -11,11 +11,15 @@ import (
 	"time"
 
 	"github.com/gin-gonic/gin"
+	"github.com/gin-gonic/gin/binding"
+	"github.com/kosuke/mj-stats-api/auth"
+	"github.com/kosuke/mj-stats-api/httpx"
 	"github.com/kosuke/mj-stats-api/models"
 )
 
 type MatchController struct {
-	DB *sql.DB
+	DB   *sql.DB
+	Auth *auth.Guard
 }
 
 func NewMatchController(db *sql.DB) *MatchController {
@@ -24,13 +28,16 @@ func NewMatchController(db *sql.DB) *MatchController {
 
 func (mc *MatchController) Calculate(c *gin.Context) {
 	var req models.CalculateMatchRequest
-	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+	if !httpx.Decode(c, &req) {
+		return
+	}
+	if err := binding.Validator.ValidateStruct(req); err != nil {
+		httpx.Invalid(c)
 		return
 	}
 
 	if err := validateUniquePlayerIDsForCalculate(req.Players); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		httpx.Invalid(c)
 		return
 	}
 
@@ -40,21 +47,25 @@ func (mc *MatchController) Calculate(c *gin.Context) {
 
 func (mc *MatchController) CreateMatch(c *gin.Context) {
 	var req models.CreateMatchRequest
-	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+	if !httpx.Decode(c, &req) {
+		return
+	}
+	if err := binding.Validator.ValidateStruct(req); err != nil {
+		httpx.Invalid(c)
 		return
 	}
 
 	if err := validateCreateMatchRequest(req); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		httpx.Invalid(c)
 		return
 	}
 
-	tx, err := mc.DB.BeginTx(c.Request.Context(), nil)
+	tx, ctx, cancel, err := mc.Auth.BeginWrite(c)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to start transaction"})
+		auth.Reject(c, err)
 		return
 	}
+	defer cancel()
 	defer tx.Rollback()
 
 	var matchID string
@@ -64,11 +75,8 @@ func (mc *MatchController) CreateMatch(c *gin.Context) {
 		RETURNING id
 	`
 
-	if err := tx.QueryRowContext(c.Request.Context(), insertMatchQuery, req.RuleID, req.SeasonID).Scan(&matchID); err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{
-			"error":  "failed to insert match",
-			"detail": err.Error(),
-		})
+	if err := tx.QueryRowContext(ctx, insertMatchQuery, req.RuleID, req.SeasonID).Scan(&matchID); err != nil {
+		httpx.Unavailable(c)
 		return
 	}
 
@@ -78,26 +86,24 @@ func (mc *MatchController) CreateMatch(c *gin.Context) {
 	`
 
 	for _, result := range req.Results {
-		if _, err := tx.ExecContext(c.Request.Context(), insertResultQuery,
+		if _, err := tx.ExecContext(ctx, insertResultQuery,
 			matchID,
 			result.PlayerID,
 			result.RawScore,
 			result.Point,
 			result.Rank,
 		); err != nil {
-			c.JSON(http.StatusInternalServerError, gin.H{
-				"error":  "failed to insert match result (check if user_id is a valid UUID)",
-				"detail": err.Error(),
-			})
+			httpx.Unavailable(c)
 			return
 		}
 	}
 
+	if !mc.Auth.BeforeCommit(c) {
+		httpx.Unauthenticated(c)
+		return
+	}
 	if err := tx.Commit(); err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{
-			"error":  "failed to commit transaction",
-			"detail": err.Error(),
-		})
+		httpx.Unavailable(c)
 		return
 	}
 
@@ -105,10 +111,13 @@ func (mc *MatchController) CreateMatch(c *gin.Context) {
 }
 
 func (mc *MatchController) GetMatches(c *gin.Context) {
+	ctx, cancel := context.WithTimeout(c.Request.Context(), 5*time.Second)
+	defer cancel()
+	c.Request = c.Request.WithContext(ctx)
 	matchDateExpr := "created_at"
 	hasMatchDate, err := mc.columnExists(c.Request.Context(), "matches", "match_date")
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to inspect matches schema", "detail": err.Error()})
+		httpx.Unavailable(c)
 		return
 	}
 	if hasMatchDate {
@@ -158,7 +167,7 @@ func (mc *MatchController) GetMatches(c *gin.Context) {
 
 	rows, err := mc.DB.QueryContext(c.Request.Context(), query)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to fetch matches", "detail": err.Error()})
+		httpx.Unavailable(c)
 		return
 	}
 	defer rows.Close()
@@ -194,7 +203,7 @@ func (mc *MatchController) GetMatches(c *gin.Context) {
 			&isTobi,
 			&resultRank,
 		); err != nil {
-			c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to scan match row", "detail": err.Error()})
+			httpx.Unavailable(c)
 			return
 		}
 
@@ -237,7 +246,7 @@ func (mc *MatchController) GetMatches(c *gin.Context) {
 	}
 
 	if err := rows.Err(); err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed while reading match rows", "detail": err.Error()})
+		httpx.Unavailable(c)
 		return
 	}
 

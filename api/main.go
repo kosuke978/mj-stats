@@ -1,68 +1,82 @@
 package main
 
 import (
+	"context"
 	"database/sql"
+	"io"
 	"log"
 	"net/http"
+	"net/url"
 	"os"
+	"strings"
+	"time"
 
 	"github.com/gin-contrib/cors"
 	"github.com/gin-gonic/gin"
 	"github.com/joho/godotenv"
+	"github.com/kosuke/mj-stats-api/auth"
 	"github.com/kosuke/mj-stats-api/controllers"
 	"github.com/kosuke/mj-stats-api/db"
+	"github.com/kosuke/mj-stats-api/httpx"
 )
 
-func main() {
-	if err := godotenv.Load(); err != nil {
-		log.Println("No .env file found, using system environment variables")
-	}
-
-	database, err := db.NewDB()
-	if err != nil {
-		log.Fatalf("Unable to connect to database: %v", err)
-	}
-	defer func(database *sql.DB) {
-		if closeErr := database.Close(); closeErr != nil {
-			log.Printf("failed to close database: %v", closeErr)
-		}
-	}(database)
-
-	matchController := controllers.NewMatchController(database)
-	userController := &controllers.UserController{DB: database}
-
-	r := gin.Default()
-	r.Use(cors.Default())
-
-	r.GET("/api/users/me", gin.WrapF(userController.GetMe))
-
+func router(database *sql.DB, verifier *auth.Verifier, origins []string) *gin.Engine {
+	guard := &auth.Guard{DB: database, Verifier: verifier}
+	matches := controllers.NewMatchController(database)
+	matches.Auth = guard
+	users := &controllers.UserController{Auth: guard}
+	r := gin.New()
+	// Default recovery/logger can expose request headers and panic/SQL details.
+	r.Use(httpx.RequestMetadata(), gin.CustomRecoveryWithWriter(io.Discard, func(c *gin.Context, _ any) {
+		httpx.Error(c, 500, "INTERNAL_ERROR", "処理に失敗しました", nil)
+	}))
+	r.Use(cors.New(cors.Config{AllowOrigins: origins, AllowMethods: []string{"GET", "POST", "PATCH", "OPTIONS"}, AllowHeaders: []string{"Authorization", "Content-Type"}, ExposeHeaders: []string{"X-Request-ID"}, MaxAge: 10 * time.Minute}))
 	r.GET("/api/health", func(c *gin.Context) {
-		if err := database.Ping(); err != nil {
-			c.JSON(http.StatusInternalServerError, gin.H{
-				"status":  "error",
-				"message": "Database connection failed",
-				"error":   err.Error(),
-			})
+		ctx, cancel := context.WithTimeout(c.Request.Context(), 5*time.Second)
+		defer cancel()
+		if database.PingContext(ctx) != nil {
+			httpx.Unavailable(c)
 			return
 		}
-
-		c.JSON(http.StatusOK, gin.H{
-			"status":  "ok",
-			"message": "MJ-Stats API & DB are running successfully",
-		})
+		c.JSON(200, gin.H{"status": "ok", "message": "MJ-Stats API & DB are running successfully"})
 	})
+	protected := r.Group("/api", guard.Middleware())
+	protected.GET("/users/me", users.GetMe)
+	protected.PATCH("/users/me", users.UpdateMe)
+	normal := protected.Group("", guard.RequireProfile())
+	normal.POST("/matches/calculate", matches.Calculate)
+	normal.POST("/matches", matches.CreateMatch)
+	normal.GET("/matches", matches.GetMatches)
+	return r
+}
 
-	r.POST("/api/matches/calculate", matchController.Calculate)
-	r.POST("/api/matches", matchController.CreateMatch)
-	r.GET("/api/matches", matchController.GetMatches)
-
+func main() {
+	_ = godotenv.Load()
+	verifier, err := auth.NewVerifier(os.Getenv("SUPABASE_URL"))
+	if err != nil {
+		log.Fatal("Invalid authentication configuration")
+	}
+	origins := strings.Split(os.Getenv("ALLOWED_ORIGINS"), ",")
+	for i, origin := range origins {
+		origin = strings.TrimSpace(origin)
+		u, err := url.Parse(origin)
+		if err != nil || u.Host == "" || (u.Scheme != "http" && u.Scheme != "https") || u.Path != "" || u.RawQuery != "" || u.Fragment != "" || u.User != nil || strings.Contains(origin, "*") {
+			log.Fatal("Invalid ALLOWED_ORIGINS")
+		}
+		origins[i] = origin
+	}
+	database, err := db.NewDB()
+	if err != nil {
+		log.Fatal("Unable to connect to database")
+	}
+	defer database.Close()
 	port := os.Getenv("PORT")
 	if port == "" {
 		port = "8080"
 	}
-
-	log.Printf("Starting server on :%s\n", port)
-	if err := r.Run(":" + port); err != nil {
-		log.Fatalf("Failed to start server: %v", err)
+	server := &http.Server{Addr: ":" + port, Handler: router(database, verifier, origins), ReadHeaderTimeout: 5 * time.Second, ReadTimeout: 10 * time.Second, WriteTimeout: 15 * time.Second, IdleTimeout: 60 * time.Second}
+	log.Printf("Starting API on port %s", port)
+	if server.ListenAndServe() != nil {
+		log.Fatal("API server stopped")
 	}
 }

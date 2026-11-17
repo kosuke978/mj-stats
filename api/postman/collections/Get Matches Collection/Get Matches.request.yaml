@@ -1,4 +1,6 @@
 $kind: http-request
-url: http://localhost:8080/api/matches
+url: "{{base_url}}/api/matches"
 method: GET
 order: 1000
+headers:
+  Authorization: "Bearer {{access_token}}"

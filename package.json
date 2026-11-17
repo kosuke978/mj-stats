@@ -1,0 +1,14 @@
+{
+  "name": "mj-stats-development",
+  "private": true,
+  "scripts": {
+    "supabase": "supabase",
+    "local:prepare": "node scripts/prepare-local.mjs",
+    "test:migrations": "node scripts/test-migrations.mjs",
+    "local:init": "node scripts/init-local.mjs",
+    "test:auth-expiry": "node scripts/test-auth-expiry.mjs"
+  },
+  "devDependencies": {
+    "supabase": "3.2.0"
+  }
+}

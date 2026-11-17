@@ -2,17 +2,17 @@
 
 この文書は「どの証拠があれば完成と言えるか」を定める。要求の正本は [requirements.md](requirements.md)、現行の挙動は [features-api.md](features-api.md)、設計条件は [architecture.md](architecture.md)、工程とDoDは [product-roadmap.md](product-roadmap.md) を参照する。
 
-ここにあるQケースは**検証設計であり、実行済みの結果ではない**。文書整備では実DBへ読み取り接続して構造・集計を確認し、公開JWKSと開発者による署名設定の画面確認を記録した。DB書き込み・実アカウントでのログイン・アプリAPIの受入確認は行っていない。将来Stepのケースを記載しても、その実装着手を承認したことにはならない。
+Qケースの一覧は検証設計であり、全件を実行済みとは扱わない。設計整備時の読み取り調査に加え、Step 1作業ブランチで専用ローカルDB/Auth/メールとChromium、管理QAの実DB/Authと開発者のメール手動操作による実行結果を取得した。対象ケース・証跡・未実施は [末尾の検証記録](#step-1実装ブランチの検証記録2026-11-17) に分ける。将来Stepのケースを記載しても、その実装着手を承認したことにはならない。
 
 ## 現在の検証基盤
 
 | 対象 | コードから確認できる状態 | 完成と判断できないこと |
 | --- | --- | --- |
-| Go | `_test.go` がない。`go test ./...` と `go vet ./...` は実行可能な基本チェック | `go test` の成功だけではJWT、計算、DB保存の振る舞いを検証したことにならない |
-| Web | `lint` / `build` scriptはあるが、test script・独立したテストファイルはない | lint・型検査・buildだけではログインやセッション更新を検証できない |
-| 手動API確認 | Postman collectionと環境ファイルがある | me・認証付きリクエスト・不正JWTのケースは未整備 |
+| Go | JWT/JWKS・名前・strict JSONの単体試験と、明示フラグで起動する実DB/Auth試験を追加 | `go test` の成功だけではJWT、計算、DB保存の振る舞いを検証したことにならない |
+| Web | lint/build/tscと、名前・戻り先の単体試験、専用ローカル環境のPlaywright試験を追加 | lint・型検査・buildだけではログインやセッション更新を検証できない |
+| 手動API確認 | Postman collectionと環境ファイルがある | me/PATCH/Bearer/401ケースと変数URLを整備。Postman UIでは未実行 |
 | CI・PR | `.github` のworkflow・PR templateがない。ブランチ保護は未確認 | チェックが自動実行・必須化されているとは扱えない |
-| DB | 実DBの39列・20制約・RLS・件数は読み取り確認済み。適用可能なDDL・マイグレーションは未管理 | 構造の観測だけでは独立した検証DBの再構築や保存試験の成功を保証しない |
+| DB | 実DBの39列・20制約・RLS・件数は読み取り確認済み。baseline/認証migrationとD-41の限定view/関数を管理 | 構造の観測だけでは独立した検証DBの再構築や保存試験の成功を保証しない |
 
 新しい自動テストは、認証・点数計算・トランザクションなど失敗の影響が大きい境界から追加する。単純な文言変更に、実装をなぞるテストを増やさない。テスト基盤やCIの導入は対象Stepの作業範囲として説明し、文書整備と混同しない。
 
@@ -58,7 +58,7 @@ p1等の文字列は旧APIの現行例のラベル。目標のリーグ配下API
 
 ## Step 1：認証の受け入れ確認
 
-現在のコードは以下をすべて満たしていない。特にmeの `ParseUnverified` と対局APIの認証欠如は、正常ケースだけでは発見できない。
+以下はStep 1全体の受入設計。作業ブランチではParseUnverifiedを廃止し対局APIを保護したが、専用ローカルの結果と共有環境/対象端末の未受入を区別する。下表だけを見て全サブケースPASSとは判断しない。
 
 | ID / 関連要求 | 手順 | Step 1完了時の期待結果 |
 | --- | --- | --- |
@@ -267,3 +267,136 @@ PRには変更に関連するQケースと要求IDを示す。Qをまとめて�
 | 対応端末・アクセシビリティ | D-39でスマホWebを承認済み。[画面仕様](features-api.md#表示と対応端末)にブラウザ・幅・操作基準を定義。実行版をPRへ記録 | Q-19/Q-26で文字切れ・入力・フォーカス・エラー認識・再訪を確認 |
 
 Phase 3〜5の分析精度・SVG共有・精算の詳細な受け入れ基準は、各Phase着手の承認後に追加する。必要な検証が揃っても、**各PRのマージと次Stepの着手は開発者の明示承認が必要**という運用は変わらない。
+
+
+## Step 1実装ブランチの検証記録（2026-11-17）
+
+以下は初回の一部完了時点の記録。**Supabase再開後の結果は本節末尾の追記を正とする。**
+
+対象はPhase 2.5 / Step 1、R-AUTH-01〜04、D-03/D-04/D-09/D-21〜30/D-40。ブランチは `feat/step-1-auth-profile`。状態は **一部完了**。実装と専用ローカルでの主な受入は進めたが、共有実コピーの受入等は未実施であり、開発者のStep完了承認・マージ承認・Step 2着手承認・本番反映承認はない。
+
+環境はmacOS arm64、Go 1.26.2、Node 22.22.3/npm 10.9.8、Next 16.2.3、Supabase CLI 3.2.0、PostgreSQL 17.12.0.000、Auth v2.198.0、Mailpit v1.31.3。専用識別名mj-stats-step1、loopback:55421/55422/55424。ブラウザはPlaywright 1.65.1のChromium 159.0.8154.6、ビルド済みWebをlocalhost:3000で起動した。Browserプラグインは接続可能なブラウザ0件だったため独立テスト環境を使用した。共有DB/Auth/メール設定への書込み・resetは行っていない。
+
+### 実行したコマンドと証跡
+
+証跡は個人データや資格情報を混ぜない要約を本節へ残し、ローカルの生結果はGit管理外の `.local/` に保管する。これらのファイルがGitHub PRへ添付済みという意味ではない。
+
+| 実行場所・コマンド | 結果 | 証跡 |
+| --- | --- | --- |
+| ルート `npm run local:init`、CLI start/reset --local、`npm run local:prepare` | ES256鍵・専用スタック・最終migration・Auth所有者の権限設定を適用 | `.local/db-reset.log`、migration履歴、公開JWKSと実Authログインの検証 |
+| `api`: `go test ./...`、`go vet ./...` | PASS。通常のtestでは実環境ケースは明示SKIP | `.local/go-test.log`、`.local/go-vet.log` |
+| `api`: `MJSTATS_INTEGRATION=1 GIN_MODE=release go test -run TestStep1RealDBAuth -v .` | PASS。実Auth Admin API/ログインと実DB、API専用ロールを使用 | `.local/go-integration.log`、`api/step1_integration_test.go` |
+| ルート `npm run test:migrations` | PASS（合成旧データ）。7表39列20制約9 index、5参加者/19対局/76結果の元値・参照保全、再適用拒否 | `.local/migration.log`、`scripts/test-migrations.mjs` |
+| `web`: `npm run lint`、`npx tsc --noEmit` | PASS | `.local/web-lint.log`、`.local/web-types.log` |
+| `web`: `npm run build`（helper経由で専用環境変数） | PASS。認証ルートは動的、proxyを生成 | `.local/web-build.log` |
+| `web`: `npm run test:auth` | PASS 2件。16組の名前fixtureと安全/危険な戻り先を確認 | `.local/web-unit.log`、`web/tests/unit/auth.test.mjs` |
+| `web`: `npm run test:browser` | PASS 7件。実ローカルAuth/メール/Go/DBとSSRを使用 | `.local/playwright.log`、`.local/browser-results.json`、`web/tests/browser/auth.spec.ts` |
+| `git diff --check`、文書リンク・Postman JSON/YAMLの検査 | PASS（ローカル参照152件・YAML16件・export JSONを確認） | 差分/構造検査の出力。Postman UI実行とは別 |
+
+初期のGoキャッシュにテスト用標準パッケージの解決失敗があり、専用 `/tmp/mjstats-go-cache` で再構築した。その後は通常のgo test/vetも成功。Nodeの単体試験はTypeScript読込に関するMODULE_TYPELESS_PACKAGE_JSONの警告があるが、assertionは全件成功した。
+
+### 実DB/Auth・ブラウザで実行したQケース
+
+| Q・範囲 | 実測した結果 |
+| --- | --- |
+| Q-06 | 4 APIへBearerなしで直接アクセスして401。healthは200。users/matches/match_resultsの全行fingerprintが前後一致。DB切断相当の接続先では503、秘密の接続詳細なし |
+| Q-07 | 不正署名/形式/issuer/audience/sub/exp/iat/session_id/匿名/role/別主体等13種類×4 APIが401、上記3表のfingerprint一致。実セッションのnot_after期限切れ・Admin APIで停止した主体も401、Auth行ロックの5秒待機失敗は503で参加者作成なし |
+| Q-08 | 実Authの同じUIDで12並行meがすべて200・同じ独立参加者UUID・auth_id一致1行。名前未設定の対局APIは403。Playerの明示設定、Unicode名への変更、初回時刻の維持、余分なid/重複キー/null/改行等の400、別Authの同名・別ID、所属が自動作成されないことを確認 |
+| Q-08/Q-15のStep 1部分 | 本人PATCH後に旧履歴へ現在名を返し、ID・結果参照を維持。Auth削除でauth_idだけNULL、registered・owner/member/記録者/結果の参照を保持、古いJWTは4 APIで401、再作成なし |
+| Q-09/Q-10 | 未認証の直URL→安全なreturnTo付きlogin、誤パスワード/メール確認待ち、初回名前設定→元画面、再読込、通常/redirect時のCookie更新、期限切れaccess token＋有効refreshによる継続、無効refreshから再ログインを確認 |
+| Q-10 | ブラウザの計算/保存にBearer、保護されたGoからSSR履歴200、応答no-storeを確認。A/Bの本人切替で別参加者・前の本人をSSRに含めない。localログアウトは同セッションのタブをloginへ、古いJWT=401、同じ本人の別contextは200 |
+| Q-10の並行処理 | Auth限定関数を含む書込みtxのロック待ちをpg_locksで観測。local signOut/ハードAuth削除はwriter commit後に完了し、終了後の要求を拒否する。終了完了後の新規要求にDB副作用なし |
+| Q-21 | Web登録→ローカル受信箱→token_hash/PKCE hash確認→名前設定。使用済み/不正typeのリンクはauth/error。回復依頼→受信→確認→新パスワード→同じAuth/参加者と名前へ復帰。回復確認なしの直接POSTは401。確認依頼の受付と実外部配送は区別 |
+| Q-25のStep 1部分 | 空の専用Supabaseへmigration、合成旧データへの増分、元39列値の保全とlegacy分類、再適用拒否を確認。通常APIロールのAuth直接SELECT/UPDATE・参加者DELETE拒否、公開ロールの関数EXECUTE拒否を確認 |
+| Q-01/Q-05/Q-13の回帰部分 | 40,000/30,000/20,000/10,000→50/10/-20/-40、旧bodyの201保存→履歴200。結果3件目のFK失敗で対局/結果の全行fingerprint一致。ブラウザの選択・計算・保存も実行 |
+| Q-26のStep 1部分 | 400/401/403/413/415/503とstrict JSON、CORS許可origin/Authorization preflight、許可外origin・危険returnToの拒否。ログインフォームを360/390/768/1280px、キーボード・200%文字拡大で横overflowなし。`.local/account-390.png` と `.local/login-360-text200.png` を保存 |
+
+Cookieをメモリ上のstorageStateとして新しいcontextへ移し、再入力なしの復元を確認した。これは通常ブラウザアプリの終了・OS再起動・実機の保存ポリシーを通した検証ではない。JWKS更新/旧新kid・期限切れキャッシュ・取得失敗・同時取得の集約・30秒境界は専用鍵/HTTP fixtureによるGo単体試験であり、実Authの鍵ローテーション受入とは区別する。
+
+### 未実施と完了判定への影響
+
+- 共有Supabaseは読み取りでXX000を返した。開発者が「その問題に関わることは一度ストップ、できるところまで」と指示したため、以後の調査・復旧・再試行を停止。実共有スキーマの直前再照合、元5参加者/19対局の実コピーへの増分適用、管理環境のAuth所有者権限確保と受入は未実施。合成fixtureのPASSで置き換えず、全体を一部完了とする。
+- 確認/回復メールリンクの実時間による期限切れ・再送の実配送、回復更新の一時障害と回復前の別端末への全影響、実Auth鍵ローテーション・外部ネットワーク断の通貫受入は未実施。無効/再利用の拒否、単体の鍵失敗、DB待機/接続失敗だけを実行済みとして記録した。
+- Safari、iOS Safari/Android Chrome実機、対象の前メジャー版、実ブラウザアプリ再起動は未実施。ChromiumとCookie復元で全対象端末の受入を代替しない。
+- Postmanは設定・JSON/YAML構造を更新したが、UIからのcollection実行は未実施。CI・PR作成・push・マージ・本番反映も未実施。
+- リーグ認可・記録者・旧NULLの履歴/帰属・正確値・ゲスト・順位表等はStep 2以降。Step 1で旧body/数値pointを変更せず、JWT認証の成功を本番運用可とはしない。
+
+### Step 1 DoDの照合
+
+| ロードマップのDoD（順序は原文と同じ） | 判定 |
+| --- | --- |
+| 1 実DBのUID対応参加者作成/取得 | ローカル実Auth/DBでPASS。共有環境の本人受入は未実施 |
+| 2 再取得/並行時に同じ参加者 | ローカルPASS（12並行、1行） |
+| 3 初回名前必須/Goの迂回拒否 | ローカルPASS |
+| 4 名前規則・本人更新・ID/成績維持 | 単体＋ローカルPASS（同名/現在名の履歴を含む） |
+| 5 JWT各異常を401 | 単体＋ローカルの実行したfixtureはPASS。全異常を実Auth発行で再現したものではない |
+| 6 不正JWTでDB書込みなし | ローカルPASS（全行fingerprint一致） |
+| 7 未認証の保護ページ→login | Chromium/SSRでPASS |
+| 8 自己登録・確認待ち・有効確認・初回名 | ローカルPASS。実外部配送/実期限切れ等は未実施 |
+| 9 回復・無効確認拒否・ID等維持 | ローカルの正常/不正/再利用/直接更新拒否はPASS。実期限切れ/全他端末影響は未実施 |
+| 10 ログイン後の履歴/計算/保存/本人参照 | ローカルの旧対局契約でPASS。リーグ認可は対象外 |
+| 11 再訪・更新・再起動・更新不能 | Cookie再読込/更新/復元/無効refreshはPASS。アプリ再起動・実機は未実施 |
+| 12 安全な元画面・初回設定優先 | 単体＋ChromiumでPASS |
+| 13 local終了・別ブラウザ維持・終了/削除後拒否 | ローカル実Auth/DBとChromiumでPASS |
+| 14 結果/制約のPR記録、API/Postman更新 | 文書・ブランチに記録済み。PR作成/添付は未実施 |
+| 15 Phase 5への効果報告・開発者完了承認 | 検証済み主体と永続IDを将来の所属/記録者へ渡せる土台を整備。完了承認は未取得 |
+
+この記録を根拠にStep全体を承認済みとはしない。共有Supabase関連の再開や残る受入は開発者の次の指示に従い、この作業ではStep 2・マージ・本番反映へ進まない。
+
+
+### Supabase再開後の追記（2026-11-17）
+
+開発者の明示指示でSupabase関連を再開した。共有プロジェクトのActiveとCLIログインを開発者が確認した後、Auth/JWKS/settingsとDBのREAD ONLY接続が復旧した。共有DBへの書込み・reset・本人への自動紐付けは行っていない。追加の適用先は、開発者が新設したFreeの **mj-stats-step1-qa（ndwjiiqhliwjpsqqoarg）** と、既存の専用ローカルだけである。
+
+| 実行・対象 | 結果・証跡 |
+| --- | --- |
+| 共有の読み取りpreflightと実export | PostgreSQL 17.6、7表の列/制約/index/RLS/policy/triggerを再照合。users 5 / leagues 1 / league_members 5 / seasons 1 / rules 2 / matches 19 / match_results 76。Auth主体/セッション0。`.local/managed-remote-preflight.log`、`legacy-actual-export.log`、private snapshot |
+| `node scripts/test-migrations.mjs --snapshot .local/legacy-actual-20261117.json` | PASS。実構造とbaselineの一致、元39列の全値・ID・参照の一致、legacy分類、通常postgresによる増分、再適用拒否。`.local/managed-migration-actual.log`。snapshot SHA-256: `92889b85388125c24610b44f7941dbece1a117ccf95f7ec7c40875b8c16f67ea` |
+| ローカルfresh resetとprepare | 3本のmigrationでPASS。Auth所有者の追加SQLなし。`.local/managed-db-reset.log` |
+| 合成旧コピーのmigration | PASS。`.local/managed-migration-synthetic.log` |
+| ローカル `MJSTATS_INTEGRATION=1 GIN_MODE=release go test -run TestStep1RealDBAuth -v .` | PASS。元のQ-06〜10/旧対局回帰に加え、D-41のview経由ロック、validatorのAuth直接権限なし、view更新拒否、service_roleの関数拒否を確認。`.local/managed-go-integration.log` |
+| 専用QAの空確認と `db push --remote=ndwjiiqhliwjpsqqoarg --skip-vault --yes` | app_tables/Auth主体/セッション0を確認後、baseline/01000/02000の3本を通常migrationで適用。PostgreSQL 17.12。ES256 JWKSを確認。`.local/managed-qa-preflight.json`、`managed-qa-migration-apply.json` |
+| ローカル `npm run test:auth-expiry` | 実時間による登録/回復のotp_expired、登録再送の受信、回復証明なしの更新拒否、弱い入力400、実Auth停止中503、復旧後の更新と同じ参加者ID、回復前セッションのAPI=401とrefresh拒否を確認。通常3600秒に復帰。`.local/auth-expiry.log` |
+| Chromiumプロセス再起動 | PASS。実際にプロセスを終了し、ディスクの専用profileで再起動。パスワード再入力なしで同じaccountへ復元。終了後profileを削除。`.local/browser-restart.log` |
+
+管理QAへの初回接続はCA不足で証明書検証に失敗し、メール本文もFree標準配送のentitlement_requiredで拒否された。その後、開発者が公式CAをダウンロードし、Mailtrap Email SandboxのCustom SMTPをQAへ設定した。証明書を `.local/supabase-ca.crt` に置きverify-full/sslrootcertで接続、config pushで8項目のAuth/メール設定を反映した。反映後のdry-runは宣言したAuth項目に差分なし、SMTPはSandbox host/2525で有効。秘密値は記録しない。
+
+| 管理QA・追加確認 | 実測した結果 |
+| --- | --- |
+| `MJSTATS_MANAGED_INTEGRATION=1 GIN_MODE=release go test -run TestStep1ManagedSupabase -count=1 -v .` | PASS。実ES256/JWKSとmjstats_apiのverify-full接続を使用。`.local/managed-qa-integration.log` |
+| Q-06/Q-07 | JWTなし/不正形式/不正署名×4 APIが401、health200、3アプリ表の全行fingerprint一致 |
+| Q-08 | 12並行meが同じ独立参加者ID、実auth_id一致1行。初回未設定403、名前設定/変更でID・初回時刻を維持 |
+| Q-25 | 実APIロールによるAuth直接SELECT/UPDATE・view直接SELECT・参加者DELETEを実行し42501。NOLOGIN/NOBYPASSRLSの関数所有者・SECURITY DEFINER・固定search_pathを実メタデータで確認。validatorのAuth直接権限なし、view更新42501、公開3ロールの関数EXECUTE拒否 |
+| Q-10/Q-08 | `pg_locks` で実Authのlocal logoutと削除がwriterを待つことを観測。writer commit後に終了。終了済みtokenで4 APIが401/書込みなし、別セッションは200。削除後はauth_idだけNULL、元の参加者/owner/member/記録者/結果を維持、再作成なし |
+| 共有保全 | 作業後に7表/構造を再READ ONLY取得し、前後のsnapshot SHA-256が上記と一致。`.local/shared-preservation.log` |
+
+**現在の状態：実装・検証完了、開発者のStep完了承認待ち。** レビュー先は[Draft PR #8](https://github.com/kosuke978/mj-stats/pull/8)。実行結果と残る制限をPR本文へ集約した。 以下は開発者が画面操作して結果を回答した受入で、自動ブラウザ試験とは区別する。
+
+- 管理QAのWeb（localhost:3001）から自己登録→Mailtrap受信→確認→初回表示名設定を実行。直後に履歴503が出たため調査し、こちらの自動試験fixture 2対局のrule_idがNULLだったことを確認。専用QAの該当2件だけに検証用rule参照を設定し、管理試験にも正常なruleと履歴200のassertionを追加して再実行PASS。アプリの旧対局契約や共有DBは変更していない。開発者が修正後の履歴・本人設定の表示を確認した。
+- localログアウト→再設定依頼→Mailtrap受信→有効リンク→新パスワード更新→同じ表示名→再ログアウト→新パスワードで再ログインを開発者が完了した。
+- 回復前後の実DBを読み取り比較し、唯一の手動参加者のid/auth_id/name/kind/初回設定時刻と所属/記録/結果参照数が一致。参照数は各0件。versionだけ2→3を観測した。本人PATCHは同名でも加算するため、この手動操作を全行同値の試験とは報告しない。正のowner/member/記録者/結果参照の保全は、別の自動Auth削除試験で確認した。`.local/managed-qa-{before,after}-recovery.json`、`managed-qa-recovery-preservation.log`。
+- 手動ブラウザの名称・版は収集していない。自動確認したブラウザは前述のChromium。SMTPはSupabaseから外部の検証用Sandboxまでで、一般利用者の受信箱への到達試験ではない。
+
+最終のGo test/vet、Web lint/tsc/build（通常/QA）、単体2件はPASS。通常のブラウザ試験は8 PASS・期限切れ専用1 SKIP（その1件は専用コマンドで別途PASS）。証跡は `.local/resumed-{go-test,go-vet,web-lint,web-types,web-build,web-unit,playwright}.log`、`managed-qa-web-build.log`、`auth-expiry.log`。生成物.next-qaはGit/ESLint対象から外し、通常ビルドと公開Auth URLを混在させない。
+
+残る制限は、Safari/iOS Safari/Android Chrome実機と対象前メジャー版（検証機/環境なし）、実Auth鍵のローテーション（既知kidの更新/失敗/同時取得等は単体fixtureで確認）、一般利用者への本番SMTP・本番URL/復旧、Postman UI（契約/構造は更新しGo/APIで実行）である。Step 1の上記PASSを全端末・公開運用の受入へ換算しない。リーグ認可等の後続Step、CI追加、本番反映、マージは実施していない。
+
+最新のDoD照合は次のとおり。初回記録の未実施項目のうち、実コピー・管理権限・実時間OTP・再送・Auth障害・回復前セッション・Chromiumプロセス再起動は、この再開作業で解消した。
+
+| DoD | 最新の判定 |
+| --- | --- |
+| 1 UID対応参加者 | 実ローカル/QAでPASS。手動本人のAuth対応も実DBで確認 |
+| 2 同UID・並行取得 | 両環境で12並行・1参加者PASS |
+| 3 初回名前必須 | Goの通常3 APIで403、Webで設定優先PASS |
+| 4 名前規則・本人更新・原ID保全 | Go/Web共通fixtureと実DBでPASS。Auth解除でも元参照を保持 |
+| 5 JWT拒否 | 単体/ローカル13異常×4 API、QAの実JWKSと異常入力でPASS |
+| 6 不正JWTで書込みなし | 両環境で3表の全行fingerprint一致PASS |
+| 7 保護ページ | Chromium/SSRで直アクセスからloginへPASS |
+| 8 登録/確認/初回名 | ローカル自動＋QAの実SMTP/開発者手動PASS。自動所属付与なし。旧全件履歴のリーグ認可はStep 2 |
+| 9 本人回復 | ローカルの期限切れ/不正/再送/障害/再試行とQAの実SMTP/手動PASS。ID・Auth・名前・初回時刻と参照数を保全 |
+| 10 ログイン後の旧対局操作 | ブラウザBearer/SSR・旧計算/保存/履歴はローカルPASS、QAの本人/履歴と手動再ログインもPASS |
+| 11 再訪/更新/再起動 | Cookie更新/復元/無効refreshとChromiumの実プロセス再起動PASS。実機の全保存ポリシーは未確認 |
+| 12 元画面・初回設定優先 | safeReturnTo単体とブラウザPASS |
+| 13 local終了・別セッション・削除拒否 | 実ローカル/QAでPASS。並行順序をpg_locksで確認 |
+| 14 記録・API/Postman | コード/文書/API/Postmanを更新し、Draft PR #8へ実測結果と未実施を集約済み |
+| 15 Phase 5効果・完了承認 | 共通の検証済み主体と永続参加者IDを後続の所属/記録者へ渡す基盤を整備。開発者のStep完了承認は未取得 |

@@ -6,7 +6,7 @@
 | --- | --- | --- |
 | Web | Next.js 16.2.3 / React 19.2.4 / TypeScript。ログイン、対局入力、履歴表示 | [package.json](../web/package.json)、[app](../web/src/app) |
 | UI・入力 | Tailwind CSS 4、Base UIを使ったUI部品、React Hook Form、Zod | [UI部品](../web/src/components/ui)、[MatchInputForm](../web/src/components/match/MatchInputForm.tsx) |
-| Auth | Supabase Auth。ブラウザのメール・パスワードログインとCookieベースのWebセッション | [login/page.tsx](../web/src/app/login/page.tsx)、[middleware.ts](../web/src/middleware.ts) |
+| Auth | Supabase Auth。ブラウザのメール・パスワードログインとCookieベースのWebセッション | [login/page.tsx](../web/src/app/login/page.tsx)、[proxy.ts](../web/src/proxy.ts) |
 | API | Go。`go.mod` はGo 1.26.2。Gin、`database/sql`、`lib/pq` を使用 | [go.mod](../api/go.mod)、[main.go](../api/main.go) |
 | DB | `DATABASE_URL` でPostgreSQLへ直接接続。Supabase上のDBを想定 | [database.go](../api/db/database.go)、[.env.example](../api/.env.example) |
 
@@ -21,19 +21,32 @@ flowchart LR
     API -->|database/sql| DB[(PostgreSQL)]
 ```
 
-これは現在の通信経路。GoのJWT署名検証と対局APIの認証ミドルウェアはまだない。Web側の認証リダイレクトだけでは、直接呼ばれるGo APIを保護できない。
+Step 1ブランチではGoに共通JWT/主体/セッション検証を追加した。ブラウザ・SSRとも本人access tokenを転送する。共有DB/Authには未適用で、後述の39列等は以前の共有DBの読み取り観測として維持する。
 
 ## コードの責務
 
 - `api/main.go`：起動、DB接続、CORS、ルート登録。
 - `api/controllers`：HTTP入出力、ポイント計算、SQL、トランザクション。現状はこれらが同居している。
 - `api/models`：APIのリクエスト・レスポンス型。DB全体のスキーマ定義ではない。
-- `api/db`：接続処理とseed。マイグレーション基盤はない。
+- `api/db`：接続処理と旧seed。DB正本は `supabase/migrations`。`supabase/permissions` はD-41で置換した旧方式の記録。
 - `web/src/app`：画面とServer Componentによる履歴取得。
 - `web/src/components/match`：入力・計算プレビュー・保存。現在はメンバー・ルールの取得元に負債がある。
 - `web/src/types`：履歴APIのWeb側型。Goの変更と同時に更新する。
 
 今後、認証を共通処理にし、ポイント計算をHTTPや表示から独立して検証できる境界へ置く。リーグ・ルール取得、保存時検証、集計、SVG描画は必要なStepで責務を分ける。将来のためだけに未使用の抽象化や空のレイヤーを大量に作らない。
+
+## Step 1作業ブランチの実装境界
+
+- `api/auth` が固定プロジェクトのES256/JWKS（5分キャッシュ、取得3秒/256KiB、未知kidの更新冷却30秒）、issuer/audience/role/anonymous/sub/session_id/時刻を検証する。Auth有効性は成功キャッシュへ置かない。
+- `api/httpx` がprivate, no-store、request_id、共通エラー、64KiB/strict JSONを扱う。Goはリクエスト・SQLエラー・資格情報をログ出力せず、障害を認証成功へ読み替えない。
+- `api/controllers/users_controller.go` はAuthロック後のtxでauth_id競合を解決し、DBが独立UUIDを生成する。名前と完了時刻を一括更新し、完了時刻は再変更で維持する。通常の対局APIは未作成/未設定を403とする。
+- `web/src/lib/auth`、`lib/supabase` と認証用画面/Provider/`proxy.ts` を追加。SSRはリクエスト単位の本人取得、ブラウザはSDKセッションからBearerを付ける。401だけ更新後最大1回再送し、通信/5xxで保存を自動再送しない。本人切替・localログアウトは表示状態とRouter Cacheを破棄する全画面遷移を使う。
+- `users.participant_kind`、`profile_completed_at`、`version` とauth_idのSET NULL FKを追加。旧未紐付けはlegacy、明示済みauth_idだけregisteredとし、名前/IDで本人を推測しない。Auth削除でもregisteredをguestへ変えない。
+- 通常migrationは `mjstats_private.valid_session` の定義とPUBLIC剥奪・Go限定EXECUTEを同一txで作る。所有者はNOLOGIN/NOBYPASSRLS、APIはLOGIN/NOBYPASSRLS、両方NOINHERIT。GoにAuth表の直接権限・物理DELETEを与えない。
+- D-41の通常migrationだけで限定Auth検証を構成する。postgres所有の非公開viewが必要7列だけを投影し、NOLOGIN/NOBYPASSRLSの関数所有ロールにはviewのSELECT/UPDATE(id)だけを与える。Auth schema/tableへの直接権限は与えず、AuthのRLS/policyも変更しない。実UPDATEはviewのINSTEAD OF triggerで42501にする。Goはviewを直接読めずboolean関数だけを実行できる。権限不足時は503で拒否する。
+- 限定関数はviewを通して元のAuth行を主体→セッションの順にFOR SHAREし、メール確認/停止/削除/別主体/not_afterを確認する。書込みはtx内で再確認・5秒のstatement/lock待機上限・commit前のJWT期限再確認を行う。先に共有ロックを取った書込みのcommit/rollback後に終了/削除が完了し、終了後の新規要求は401となる。
+
+対局のbody、floatポイント、固定候補、全件履歴はこのStepで刷新しない。リーグ認可、正確値、記録者、ゲスト連携はStep 2〜3。開発者の再開指示後、共有の実コピーを取得し増分保全を検証した。新migrationの適用先は専用ローカルと新設QAで、共有DBは変更していない。WebのAuth通信は1回5秒、通信障害は再試行可能な503として扱う（D-42）。
 
 ## 7つのコアテーブル
 
@@ -41,7 +54,7 @@ flowchart LR
 
 | テーブル | 役割 | コード・seedで使われる主な項目 | 現在の接続状況 |
 | --- | --- | --- | --- |
-| `users` | 登録者・永続ゲストの参加者ID | `id`, `auth_id`, `name`, `created_at` | meのUpsert、結果保存・履歴JOIN、seed。auth_idはDBにあるがGoで未利用。ゲスト操作未実装 |
+| `users` | 登録者・永続ゲストの参加者ID | `id`, `auth_id`, `name`, `created_at` | Step 1でauth_idによる本人取得・名前設定/変更を接続。結果保存・履歴JOIN・seed。ゲスト操作は未実装 |
 | `leagues` | コミュニティ・集計・権限の境界 | `id`, `name`, `owner_id` | seedのみ。取得・管理APIなし |
 | `league_members` | リーグ所属と役割 | `league_id`, `user_id`, `role` | seedのみ。所属・権限チェックなし |
 | `seasons` | リーグ内の成績集計期間 | `id`, `league_id`, `name`, `start_date`, `end_date` | seed、保存APIの引数。選択・管理・集計なし |
@@ -277,7 +290,7 @@ JWT検証はSupabaseの [JWT資料](https://supabase.com/docs/guides/auth/jwts) 
 
 #### JWT・セッション検証の処理設計案
 
-以下は承認済みの振る舞いを満たす技術設計案。ライブラリ・応答契約・移行に必要な条件を具体化し、項目9・11と総合レビューへ統合した。実装・受入試験は未実施。
+以下は承認済みの振る舞いを満たす設計条件。Step 1で実装した範囲と受入結果は冒頭の実装境界および品質文書に記録する。設計の全サブケースを実行済みとするものではない。
 
 | 条件 | 検証・処理 |
 | --- | --- |

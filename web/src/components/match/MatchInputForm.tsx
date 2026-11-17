@@ -1,6 +1,7 @@
 "use client"
 
 import * as React from "react"
+import { clientAPI } from "@/lib/auth/client-api"
 import { useRouter } from "next/navigation"
 import { zodResolver } from "@hookform/resolvers/zod"
 import { Loader2, Plus, AlertCircle } from "lucide-react"
@@ -161,7 +162,7 @@ export function MatchInputForm() {
 
       const resolvedPlayers = buildPlayersForApi(values)
 
-      const calculateResponse = await fetch(`${baseUrl}/api/matches/calculate`, {
+      const calculatedRows = await clientAPI<CalculateResponse[]>("/api/matches/calculate", {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
@@ -174,12 +175,6 @@ export function MatchInputForm() {
         }),
       })
 
-      if (!calculateResponse.ok) {
-        const errorBody = await calculateResponse.text()
-        throw new Error(errorBody || "計算APIの呼び出しに失敗しました")
-      }
-
-      const calculatedRows = (await calculateResponse.json()) as CalculateResponse[]
       const resolvedMap = new Map(resolvedPlayers.map((player) => [player.player_id, player]))
 
       return calculatedRows
@@ -240,7 +235,7 @@ export function MatchInputForm() {
         if (!baseUrl) throw new Error("NEXT_PUBLIC_API_URL が設定されていません")
         if (!ruleId) throw new Error("NEXT_PUBLIC_RULE_ID が設定されていません")
 
-        const saveResponse = await fetch(`${baseUrl}/api/matches`, {
+        await clientAPI<{ match_id: string }>("/api/matches", {
           method: "POST",
           headers: {
             "Content-Type": "application/json",
@@ -257,11 +252,6 @@ export function MatchInputForm() {
             })),
           }),
         })
-
-        if (!saveResponse.ok) {
-          const errorBody = await saveResponse.text()
-          throw new Error(errorBody || "保存APIの呼び出しに失敗しました")
-        }
 
         setIsPreviewOpen(false)
         router.push("/matches")

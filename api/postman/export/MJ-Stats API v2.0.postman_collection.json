@@ -1,7 +1,7 @@
 {
   "info": {
     "name": "MJ-Stats API v2.0",
-    "description": "MJ-Stats API endpoint collection",
+    "description": "Phase 2.5 Step 1: ES256/Auth-session protection. Complete display name before match APIs. Legacy match body/point contract is retained. Dedicated local DB only for writes.",
     "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
   },
   "item": [
@@ -10,17 +10,9 @@
       "request": {
         "method": "GET",
         "header": [],
-        "url": {
-          "raw": "http://localhost:8080/api/health",
-          "protocol": "http",
-          "host": [
-            "localhost"
-          ],
-          "port": "8080",
-          "path": [
-            "api",
-            "health"
-          ]
+        "url": "{{base_url}}/api/health",
+        "auth": {
+          "type": "noauth"
         }
       },
       "response": []
@@ -44,19 +36,7 @@
             }
           }
         },
-        "url": {
-          "raw": "http://localhost:8080/api/matches/calculate",
-          "protocol": "http",
-          "host": [
-            "localhost"
-          ],
-          "port": "8080",
-          "path": [
-            "api",
-            "matches",
-            "calculate"
-          ]
-        }
+        "url": "{{base_url}}/api/matches/calculate"
       },
       "response": []
     },
@@ -79,18 +59,7 @@
             }
           }
         },
-        "url": {
-          "raw": "http://localhost:8080/api/matches",
-          "protocol": "http",
-          "host": [
-            "localhost"
-          ],
-          "port": "8080",
-          "path": [
-            "api",
-            "matches"
-          ]
-        }
+        "url": "{{base_url}}/api/matches"
       },
       "response": []
     },
@@ -104,21 +73,111 @@
             "value": "application/json"
           }
         ],
-        "url": {
-          "raw": "http://localhost:8080/api/matches",
-          "protocol": "http",
-          "host": [
-            "localhost"
-          ],
-          "port": "8080",
-          "path": [
-            "api",
-            "matches"
-          ]
-        },
+        "url": "{{base_url}}/api/matches",
         "description": "対局履歴一覧を取得します。"
       },
       "response": []
+    },
+    {
+      "name": "4. Get Me",
+      "request": {
+        "method": "GET",
+        "url": "{{base_url}}/api/users/me"
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test(\"me is authenticated\", () => pm.response.to.have.status(200));",
+              "pm.test(\"persistent participant + profile state\", () => { const u=pm.response.json(); pm.expect(u.id).to.be.a(\"string\"); pm.expect(u).to.have.property(\"profile_completed_at\"); });"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "5. Set My Display Name",
+      "request": {
+        "method": "PATCH",
+        "url": "{{base_url}}/api/users/me",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\"name\":\"Postman Player\"}",
+          "options": {
+            "raw": {
+              "language": "json"
+            }
+          }
+        }
+      }
+    },
+    {
+      "name": "6. Missing Bearer (401)",
+      "request": {
+        "method": "GET",
+        "url": "{{base_url}}/api/users/me",
+        "auth": {
+          "type": "noauth"
+        }
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test(\"unauthenticated\", () => pm.response.to.have.status(401));",
+              "pm.test(\"common error\", () => pm.expect(pm.response.json().error.code).to.eql(\"UNAUTHENTICATED\"));"
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "7. Invalid JWT (401)",
+      "request": {
+        "method": "GET",
+        "url": "{{base_url}}/api/users/me",
+        "auth": {
+          "type": "bearer",
+          "bearer": [
+            {
+              "key": "token",
+              "value": "invalid.jwt.fixture",
+              "type": "string"
+            }
+          ]
+        }
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test(\"invalid JWT rejected\", () => pm.response.to.have.status(401));"
+            ]
+          }
+        }
+      ]
     }
-  ]
+  ],
+  "auth": {
+    "type": "bearer",
+    "bearer": [
+      {
+        "key": "token",
+        "value": "{{access_token}}",
+        "type": "string"
+      }
+    ]
+  }
 }

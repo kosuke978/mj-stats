@@ -1,7 +1,8 @@
 $kind: http-request
-url: http://localhost:8080/api/matches
+url: "{{base_url}}/api/matches"
 method: POST
 headers:
+  Authorization: "Bearer {{access_token}}"
   Content-Type: application/json
 body:
   type: json

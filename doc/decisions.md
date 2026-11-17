@@ -178,6 +178,7 @@
 
 - 状態・決定者：承認済み。開発者、2026-10-06。
 - 決定：ロードマップの設計確認1〜12を順に進め、すべての設計ドキュメント整備と12の総合レビューを終えてからコーディングへ移る。
+- 2026-11-17の実装着手：開発者が完成したdocを前提にStep 1実装を明示指示。D-20のコーディング移行判断として扱う。Step完了・マージ・Step 2・本番反映の承認は含まない。
 - 当初の進め方：一論点ずつ事実・選択肢・推奨理由を示す方式だった。2026-10-10のD-23により、独立した論点をまとめて判断する方式へ更新した。全1〜12の文書整備後にコーディングする条件と既存9ファイルへの集約は維持する。
 - 効果・注意：設計期間にStep 1だけ先行して実装することも行わない。調査・文書更新は進めるが、アプリ実装・DBへの変更適用は行わない。既存の未決定の選択肢を、この進め方の承認だけで採用済みにはしない。
 - 反映先：[product-roadmap.md](product-roadmap.md)、[development-workflow.md](development-workflow.md)、[AGENTS.md](../AGENTS.md)。完了後は開発者のコーディング移行判断に従い、実装はPhase 2.5 / Step 1から順に進める。
@@ -359,6 +360,31 @@
 - 設計：league_membersで登録者・ゲストを関連付け、参加者種別とAuth紐付け/ログイン可否を区別する。未登録ゲストは1リーグだけに関連付け、Auth解除済み登録者を新規ゲストへ分類し直さない。元IDと本人集計用IDは補助関連で結び付ける。
 - 比較した代替案：usersだけにゲスト所有リーグを持たせ、所属と別の経路で候補・参照を管理する方式。
 - 反映先：[目標データモデル](architecture.md#設計確認11へ渡す目標データモデル)、APIの参加者型、Q-15/Q-25。7つのコアテーブルは維持し、必要な補助表・制約を同じ移行設計で管理する。
+
+### D-40 Step 1のAuth所有者権限とローカル検証
+
+- 追記：下記は初回ローカル実装の記録。管理環境ではAuth所有者の権限を利用できないため、DB権限方式とprepare手順はD-41で置き換えた。現在はこの権限SQLを適用しない。
+- 状態・設計者：Step 1実装の技術具体化。AI、2026-11-17。業務仕様の変更ではない。共有/本番への適用承認ではない。
+- 実測：CLI 3.2.0 / PostgreSQL 17.12 / Auth v2.198.0の専用スタックではauth.users/auth.sessionsのRLSが有効でpolicyなし。postgresはAuth表/スキーマの所有者ではなく、限定SELECTの再GRANTはできてもUPDATE(id)・schema USAGEの再GRANTやpolicy作成はできない。通常migrationだけで十分という想定では実行時503になった。
+- 採用：通常migrationでアプリ列・専用ロール・固定SQLのSECURITY DEFINER関数・PUBLIC剥奪/Go限定EXECUTEを同時に作る。その後、Auth所有者/管理者が [権限SQL](../supabase/permissions/step1_auth.sql) を適用する。ローカルは識別を確認するprepare-local.mjsでsupabase_adminを用いる。Go用/関数所有の両ロールはNOBYPASSRLS、関数所有はNOLOGIN。限定7列SELECTとidのロック権限、専用SELECT/UPDATE policyだけを付け、UPDATEのWITH CHECK(false)で実更新を拒否する。
+- 比較：GoへAuthの広い権限やBYPASSRLSを渡す案、AuthのRLSを無効化する案は採用しない。設定が足りない場合は503で拒否し、検証を省略しない。
+- 影響：通常migration後と各reset後に明示した所有者権限設定が必要。管理環境でこの権限を確保できるかは共有環境の受入前に確認する。共有Supabase接続問題の調査・復旧・再試行は開発者の追加指示で停止し、共有環境への移行は未実施。
+- パスワード回復：SupabaseのverifyOtp成功後だけ、主体/session_idに紐付く10分のHttpOnly署名Cookieを発行する。Webの更新処理は同一origin・この証明・Goの有効セッション確認を要求し、資格情報の更新自体はSupabaseに委ねる。AUTH_FLOW_SECRETはサーバーだけに保持する。
+
+### D-41 管理Supabaseでの限定Auth検証
+
+- 状態・設計者：Step 1の技術具体化、AI、2026-11-17。D-40のAuth所有者による追加GRANT/policy方式を置換する。署名・主体/セッション・並行書込みの業務条件は変更しない。
+- 根拠：管理環境のpostgresはAuthスキーマの所有者ではなく、USAGE/UPDATE(id)の再GRANTやAuth policyの作成を通常migrationから行えない。[Supabaseの権限説明](https://supabase.com/kb/troubleshooting/permission-errors-when-granting-custom-roles-access-to-the-auth-schema-9e32e7)と実ロールの権限を照合した。
+- 採用：通常postgres所有の非公開viewで、主体4列・セッション3列だけを投影する。security_invoker=false / security_barrier=trueとし、関数所有のNOLOGIN/NOBYPASSRLSロールへviewのSELECT/UPDATE(id)だけを許可する。viewのUPDATEはINSTEAD OF triggerで42501にし、Auth値の変更を拒否する。通常Goロールにはbooleanの限定関数EXECUTEだけを与え、view・Auth表・資格情報は読ませない。
+- 並行処理：固定search_pathの限定関数がviewを主体→sessionの順にFOR SHAREする。これは[view所有者の権限](https://www.postgresql.org/docs/17/sql-createview.html)で評価され、[元のAuth行をロックする](https://www.postgresql.org/docs/17/sql-select.html)。Goの書込みtxとの境界を維持する。Auth表の所有権・RLS・policy・値をアプリのために変更しない。
+- 移行：適用済みのbaseline/認証migrationを改変せず、`20261117002000_managed_auth_validation.sql` を増分追加する。先行migrationの直接SELECT grantを取り消す。`supabase/permissions/step1_auth.sql` は旧方式の記録として残し、新viewがある環境では実行を拒否する。旧方式を適用した専用ローカルはfresh resetで再構築する。共有/本番のresetを許可するものではない。
+- 検証と環境：開発者の再開指示後、共有DBをREAD ONLYで取得し、実コピーの増分・旧値保全を検証した。新設の専用QAのみへ通常migrationを適用した。詳細な実行結果は品質文書へ記録し、共有DBへの書込み承認とは区別する。
+
+### D-42 隔離メール環境とAuth通信障害
+
+- 状態・設計者：Step 1の運用・技術具体化、AI、2026-11-17。自己登録/確認/回復をSupabaseへ任せるD-26/D-30は維持する。
+- 実設定：新設Freeの標準配送ではメール本文の変更が400 entitlement_requiredで拒否された。[2026-06-03のSupabase変更案内](https://supabase.com/changelog/46599-changes-to-email-template-customisation-on-free-tier)と一致する。専用QAには検証用Custom SMTPを使い、外部への本番配送・有料プラン移行は別承認とする。SMTP資格情報をGitやチャットへ載せない。
+- 通信：実Auth停止試験でWebの無制限な待機を検出した。ブラウザ/SSR/proxyのAuth fetchを1回5秒に制限し、通信失敗はSDKが再試行できる503へ変換する。回復証明と利用可能なセッションを保持し、更新の5xxを入力エラー400へ誤変換しない。パスワード更新の判断・発行は引き続きSupabaseが行う。
 
 ## 未決定の設計・運用
 
