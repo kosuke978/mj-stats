@@ -1,6 +1,6 @@
 # 実装済み機能とAPI契約
 
-この文書は基準コミット `12760ca` のコード上の挙動を記録する。画面・APIの実装があるものも、実DB・実ブラウザで今回動作確認したわけではない。目標仕様は [requirements.md](requirements.md)、工程は [product-roadmap.md](product-roadmap.md)、設計条件は [architecture.md](architecture.md) を参照する。
+前半は基準コミット `12760ca` のコード上の挙動、後半の『目標API契約』『目標画面・状態・導線』は2026-11-17に統合した未実装の設計を記録する。画面・APIの実装があるものも、実DB・実ブラウザで今回動作確認したわけではない。要求は [requirements.md](requirements.md)、工程は [product-roadmap.md](product-roadmap.md)、設計条件は [architecture.md](architecture.md) を参照する。
 
 ## 画面と利用フロー
 
@@ -72,9 +72,14 @@
 | --- | --- | --- | --- |
 | 40,000 / 30,000 / 20,000 / 10,000 | 1 / 2 / 3 / 4 | +50.0 / +10.0 / -20.0 / -40.0 | seedにも使われる通常例 |
 | 35,000 / 35,000 / 20,000 / 10,000 | 1 / 1 / 3 / 4 | +30.0 / +30.0 / -20.0 / -40.0 | 上位ウマ平均15、トップオカ各10 |
+| 33,300 / 33,300 / 33,300 / 100 | 1 / 1 / 1 / 4 | +16.7 / +16.6 / +16.6 / -49.9 | 3人同点。入力順の先頭トップが丸め差分+0.1を受ける |
 | 25,000 / 25,000 / 25,000 / 25,000 | 1 / 1 / 1 / 1 | 0.0 / 0.0 / 0.0 / 0.0 | 全員同点 |
 
 **重要な制限：** Goは合計点を検証しない。手順5は丸め誤差に限らず、不正な素点合計による差分も先頭へ押し込めてしまう。合計ポイントが0になったことは入力の正しさの証明ではない。保存APIもこの計算処理を呼ばない。
+
+例えば40,000 / 30,000 / 20,000 / 0点（合計90,000点）でも、現行の計算処理は+60 / +10 / −20 / −50ptへ補正して合計0にする。これはコードと数値の静的な検算による説明であり、APIの受入試験結果ではない。目標の入力拒否・端数規則は [設計確認5](architecture.md#設計確認5ルールポイントの設計案)、D-07、Q-11で扱う。
+
+2026-11-16のD-06/D-07では使用済みルールの版管理、100点単位・負点可、同順位・ウマ平均・トップオカ等分を承認済み。開発者の指摘により、小数第1位への四捨五入を目標仕様の前提にはしない。目標は各rule IDの条件から計算した正確値を保全することで、上記の固定計算・丸め・入力順補正は現行負債の説明として残す。分数による正確値の技術案は [同点計算と保存精度](architecture.md#同点計算と保存精度) を参照する。
 
 ## API一覧
 
@@ -112,7 +117,7 @@
 
 Bearerなし、解析失敗、subなしは401。DB書き込み・取得失敗は500。上記IDは型を示す例であり、実アカウントのIDではない。Step 1で署名検証前のユーザー作成を禁止する。
 
-目標との差：D-04によりAuth UIDはauth_idから参加者へ対応付け、D-22により初回表示名を本人が設定してから通常利用する。D-24/D-25により名前は1〜30文字・同名可、本人が変更でき、履歴は現在名を表示する。初回・並行作成と設定状態の処理案は [architecture.md](architecture.md) を参照する。現在のレスポンスには設定状態がなく、本人の表示名を更新するAPIもない。meへの状態追加・更新APIのmethod/path・エラー契約は項目9で確定する。上記JSONは現行例として残す。
+目標との差：D-04によりAuth UIDはauth_idから参加者へ対応付け、D-22により初回表示名を本人が設定してから通常利用する。D-24/D-25により名前は1〜30文字・同名可、本人が変更でき、履歴は現在名を表示する。初回・並行作成と設定状態の処理案は [architecture.md](architecture.md) を参照する。現在のレスポンスには設定状態がなく、本人の表示名を更新するAPIもない。meへの状態追加・更新APIのmethod/path・エラー契約は後半の目標API節に記載した。上記JSONは現行例として残す。
 
 ### `POST /api/matches/calculate`
 
@@ -224,8 +229,156 @@ IDは形式例。実際にはDBが返した新しいIDを返す。
 | T-14 | meはAuth UIDをusers.idへ直接保存し、実DBにあるusers.auth_id UUID NULL UNIQUEを利用しない。現5件はauth_id未設定 | 項目2で既存列の活用・未紐付け参加者の扱いを設計し、Step 1/Step 3で承認範囲に従って実装 |
 | T-15 | RLSは全7テーブルで有効だがポリシーなし。同じ接続情報の調査ロールはBYPASSRLS=true | Goで所属・操作権限を検証する。DB側の防御は項目11で具体化 |
 | T-16 | ルール2件のleague_idがNULLで、対局の所属をrule経由で追えない。18対局のseason/記録者もNULL | 項目4〜7と移行設計で帰属・既存NULLの扱いを確定。推測で補完しない |
+| T-17 | Goのfloat64/math.Round・入力順補正とDBのnumeric(6,1)では、3人同点等の正確な等分をそのまま保全できない | D-07の非丸め方針に沿い、Step 2〜3の計算/API/保存精度と項目11の旧結果保全を統合する。小数桁を増やすだけで循環小数の問題が解決したとはしない |
+| T-18 | 対局日時列がなくcreated_atで代用し、表示のタイムゾーン固定もない | D-16に従いStep 2〜4で対局/入力日時と日本時間表示を整備。D-17の未指定対局を期間だけでシーズンへ自動算入しない |
 
 対応時期は計画であり、この一覧の掲載だけでは実装の承認にならない。新しい負債を見つけたら再現条件・影響・対象Stepを追記する。
+
+## 目標API契約：設計確認9
+
+この節は2026-11-17に統合したPhase 2.5の技術設計で、全APIが未実装または現行との差分を持つ。承認済みDを具体化した契約として、対応Stepの実装・Go/Web/Postmanの更新とQケースを揃える。上記の現行契約・JSON例はそのまま現状の参照に使い、稼働済みと混同しない。
+
+| 項目 | 目標の型・意味 | 互換性と確認 |
+| --- | --- | --- |
+| 結果のpoint | `{"numerator":"499","denominator":"30"}` のような既約分数。双方とも10進整数文字列、分母は正、0は0/1 | 現行numberからobjectへの互換性変更。WebのtoFixed・point順ソート、Go型、DB、Postmanを同時に更新する。表示した小数を保存/集計へ再入力しない |
+| league_id | 新規対局の対象リーグをUUIDで特定。未指定シーズンでも必須の文脈 | Goで所属・rule/season/参加者のリーグを検証。bodyの指定だけを権限根拠にしない。保存モデルは設計確認7/11で統合 |
+| season_id | 保存入力はUUIDまたはNULL。省略も未指定として扱う | Goの現*intを変更。通算は有無を問わず、特定シーズンは一致IDだけを対象とする。フィルタの省略と未指定のみの検索は別に定義する |
+| match_date | 新規入力はRFC 3339のオフセット付き日時、応答はUTCのZ付き文字列。既存日時不明はNULL | 現行のcreated_at代用を廃止する互換性変更。Webは日本時間で表示し、NULLなら記録日時として区別する |
+| created_at | サーバーが設定する記録作成時刻。新規はUTCのZ付き文字列、旧値自体が不明ならNULL | 対局日時とは別で、クライアントによる上書きは許可しない。対局/記録日時が両方不明なら『日時不明』と示す |
+
+pointの例は `499/30 = 16.6333…pt` の型説明であり、単体で対局保存を実行できるfixtureではない。負の分子は許可し、NaN/Infinity・分母0や負の分母・整数以外を正確値として受け入れない。保存入力のpoint/rankやrecorded_byは許可せず、Goが生成する。UUIDは文字列、versionは正の10進整数文字列、日時はRFC 3339、未設定値は明示NULLとして返す。対象一覧が空なら配列は[]、next_cursorはNULL。
+
+### 共通の認証・検証・失敗契約
+
+- health以外のGo APIはBearerとAuth主体/セッションを検証する。meの取得/本人の名前設定だけは初回設定未完了でも許可し、他は403 PROFILE_INCOMPLETE。me以外は参加者の不在を自動作成で解決せず、403 PROFILE_REQUIREDでme取得へ戻す。
+- リーグAPIは対象の有効所属を要求する。非所属と存在を確認できないリーグIDは403 LEAGUE_ACCESS_DENIEDに統一。所属確認後にそのリーグの子IDが存在しない場合は404 NOT_FOUND。検索・番号解決・招待確認・参加だけは所属前の例外として下表の最小情報を返す。
+- 変更bodyはJSON object、上限64KiB。未知/重複フィールド・不正な型・必須値の欠落・不正UUID/日時・範囲外は400 INVALID_INPUTとfield_errors。Content-Type不正は415、上限超過は413。認証を先に確認し、不正要求でDB副作用を起こさない。
+- 書込みを伴うme以外の変更操作はclient_request_id（UUID）を要求する。新規対局以外の管理操作も操作種別/操作者/対象とhashを変更記録で対応付け、同じ操作の再送を二度適用しない。版を持つ対象の更新はversionも要求し、操作IDの再送判定を版の競合判定より先に行う。本人の名前設定は同じ名前の再送を安全に適用できるため操作IDを不要とし、自分のleaveは現在の所属を終了する冪等操作とする。
+- 不正認証401 UNAUTHENTICATED、認可403 FORBIDDEN、版不一致409 VERSION_CONFLICT、同じ操作IDで内容違い409 IDEMPOTENCY_CONFLICT、状態不整合409 STATE_CONFLICT。鍵/DBの一時障害と処理待機上限は503 TEMPORARILY_UNAVAILABLE、予期しない実装エラーは500 INTERNAL_ERROR。いずれもSQL詳細・JWT・参加コードを本文へ出さない。
+- CORSは許可したWeb originだけ、Authorization/Content-Typeを許可しOPTIONSは認証前に処理。Cookie認証をGoへ追加せず、ブラウザ/SSRともBearerを送る。本人/リーグの応答はprivate, no-storeとし共有キャッシュを禁止する。
+
+共通エラーの型例：
+
+```json
+{"error":{"code":"INVALID_INPUT","message":"入力内容を確認してください","field_errors":{"players[0].raw_score":"100点単位で入力してください"},"request_id":"example-request-id"}}
+```
+
+field_errorsは入力不備の場合だけ返し、messageは表示用、分岐はcodeを使う。503の再試行は取得/計算なら同じ要求、保存/変更なら同じ操作IDと内容を維持する。401では更新可能なセッションをWebが1回更新して再送し、それでも失敗すれば安全な戻り先付きでログインへ。403は再ログインを繰り返さず、設定/所属/権限の状態を示す。
+
+### me・リーグ基盤と参加のルート
+
+『設定済』は有効な本人セッションと初回名前設定済み、『所属』は対象リーグへの有効所属、『運営』はowner/admin。IDを含むpathの子リソースは必ず同じleague_idで検索する。
+
+| Method / Path | 条件・入力 | 成功・副作用 / 対象Step |
+| --- | --- | --- |
+| GET /api/health | 公開 | DB疎通200、失敗503。内部接続情報なし / Step 1 |
+| GET /api/users/me | 本人JWT | 200 {id,name,profile_completed_at}。auth_idで検索/並行初回作成。初期名Player、完了時刻NULL。既存名を上書きしない / Step 1 |
+| PATCH /api/users/me | 本人JWT、{name}のみ | 200で同じ本人型。D-24で検証し、初回だけ完了時刻も一括設定。以後の名前変更で完了時刻・他人のIDを変更しない / Step 1 |
+| GET /api/leagues | 設定済 | 200 {leagues:[{id,name,group_number,my_role}]}、自分の有効所属だけ / Step 2 |
+| POST /api/leagues | 設定済、{name,client_request_id} | 201 {league,rule}。番号/リーグ/初期owner所属/初期ルールを一括作成。シーズンは自動作成せず、初期非掲載 / Step 2 |
+| GET /api/leagues/search | 設定済、q/cursor/limit | 200 {leagues,next_cursor}。掲載済みのid/name/group_numberだけ。参加コード・所属者・成績なし / Step 2 |
+| POST /api/leagues/resolve | 設定済、{group_number} | 200で最小リーグ情報、番号なしは404。非掲載も番号で解決可。所属作成なし / Step 2 |
+| POST /api/leagues/join-preview | 設定済、{group_number,code} | 200で最小リーグ情報とexpires_at。無効/期限切れ/失効は404 INVALID_INVITEに統一。所属作成なし / Step 2 |
+| POST /api/leagues/{league_id}/join | 設定済、{code,client_request_id} | 200 {membership}。要求時点の招待を検証。未所属/退出/除名済みはmemberへ、有効所属は元roleを維持 / Step 2 |
+| GET /api/leagues/{league_id} | 所属 | 200でリーグと本人role。一般情報に参加資格を含めない / Step 2 |
+| PATCH /api/leagues/{league_id} | 運営、{name?,search_listed?,version,client_request_id} | 200、設定と変更記録を一括更新。owner_idは受け付けない / Step 5 |
+| GET /api/leagues/{league_id}/participants | 所属、cursor/limit | 200 {participants,next_cursor}。id/name/kind/versionを持つ新規選択可能な有効参加者。legacyを除き、紐付け済みゲストは本人候補へまとめる / Step 2〜3 |
+| POST /api/leagues/{league_id}/guests | 所属、{name,client_request_id} | 201 {participant}。ゲストと対象リーグ関連を一括作成。既存の同名を自動取得しない / Step 3 |
+| PATCH /api/leagues/{league_id}/guests/{user_id} | 運営、{name,version,client_request_id} | 200。対象は未紐付けゲストだけ。登録者本人の名前はmeから変更 / Step 5 |
+| GET /api/leagues/{league_id}/rules または /seasons | 所属、cursor/limit。rulesはavailable=true（既定）/false/all | 200 {rules,next_cursor} / {seasons,next_cursor}。別リーグを混ぜない。旧対局の条件確認には利用停止済みルールも取得可 / Step 2 |
+| POST /api/leagues/{league_id}/rules | 運営、{name,default_points,return_points,uma:[4整数],client_request_id} | 201、新しいrule ID。S/Rは正の100点単位、R≥S、ウマ降順/合計0、全てDB整数範囲 / Step 2の初期版、Step 5の管理 |
+| PATCH /api/leagues/{league_id}/rules/{rule_id} | 運営、{available,version,client_request_id}のみ | 200。計算条件の更新は400で拒否し、新版作成へ案内。旧対局は元rule IDを維持 / Step 5 |
+| POST /api/leagues/{league_id}/seasons | 運営、{name,start_date?,end_date?,client_request_id} | 201、YYYY-MM-DDまたはNULL。期間逆転を拒否 / Step 2の基盤、Step 5の管理 |
+| PATCH /api/leagues/{league_id}/seasons/{season_id} | 運営、{name?,start_date?,end_date?,version,client_request_id} | 200。使用済み期間の日付変更は409、名前だけの変更は可。締め操作なし / Step 5 |
+
+me以外の名前はゲスト1〜30、リーグ/ルール/シーズン1〜100コードポイントで、前後空白・改行/制御文字の扱いはD-24と同じ。同名はIDで区別する。検索はUnicode NFKC・小文字化した名前の部分一致、qは2〜100コードポイント、%/_はワイルドカードでなく文字として扱う。元の表示名は検索正規化で置換しない。
+
+### 対局・順位表・管理のルート
+
+| Method / Path（/api/leagues/{league_id}配下） | 条件・入力 | 成功・副作用 / 対象Step |
+| --- | --- | --- |
+| POST /matches/calculate | 所属、{rule_id,players:[{user_id,raw_score}×4]} | 200 {rule_id,results}、DB書込みなし。4人・単位・合計・候補・ruleを検証してGoで正確値を生成 / Step 3 |
+| POST /matches | 所属、{rule_id,season_id?,match_date,players:[4],client_request_id} | 初回201、同内容の再送200、同じmatch ID。記録者は本人。1対局/4結果/作成記録を一括保存 / Step 3 |
+| GET /matches | 所属、season/status/cursor/limit | 200 {matches,next_cursor}、取消状態も区別して返す。seasonは下記、statusはall（既定）/valid/cancelled / Step 2の閲覧基盤、Step 5の取消表示 |
+| GET /matches/{match_id} | 所属 | 200 Match型。別リーグのIDは404。管理用の変更理由/前後一式は含めない / Step 3 |
+| PATCH /matches/{match_id} | 運営、作成入力の全項目＋reason/version/client_request_id（rule/season/date/playersは全置換） | 200 {match_id,applied_version}。再検証・再計算・4結果と変更記録を一括更新 / Step 5 |
+| POST /matches/{match_id}/cancel | 運営、{reason,version,client_request_id} | 200 {match_id,applied_version}。状態と変更記録を一括更新。取消済みの別操作は409 / Step 5 |
+| GET /matches/{match_id}/revisions | 運営、cursor/limit | 200 {revisions,next_cursor}。変更前後・理由・操作者、時刻と版を返す / Step 5 |
+| GET /ranking | 所属、season | 200 {metric:"total_point",season,entries}。各entryは順位/本人ID/表示名/正確な合計point/対局数。取消を除外 / Step 5 |
+| GET /members | 所属、cursor/limit | 200 {members,next_cursor}。所属管理に必要な参加者ID/現在名/role/status/version。Authメールは返さない / Step 2 |
+| PATCH /members/{user_id} | owner、{role:"admin"または"member",version,client_request_id} | 200。対象は有効な登録者、現ownerの変更やbodyのowner指定は拒否 / Step 5 |
+| POST /members/{user_id}/remove | owner、または対象がmemberの場合だけadmin。{reason,version,client_request_id} | 200。登録者の所属をremovedにする。owner本人とguest/legacyは対象外 / Step 5 |
+| POST /leave | 所属、{client_request_id} | 200。本人をleftにし、ownerは409で引継ぎへ案内。原ID・成績は残す / Step 5 |
+| GET /invites/current、POST /invites、POST /invites/{id}/revoke | 運営。変更はclient_request_id、失効はversionも要求 | GET200、発行201、失効200。発行時は旧共通招待を失効し、コード/リンクは運営だけへ返す / Step 2 |
+| POST /participant-links | 所属、{guest_user_id,client_request_id} | 201で本人の申請/同意を記録。対応先の登録者IDはGoが本人から設定 / Step 3 |
+| GET /participant-links | 所属、cursor/limit | 200。一般memberは本人の申請だけ、運営はリーグの申請/対応を閲覧 / Step 3 |
+| POST /participant-links/{id}/approve または /reject | 運営、{confirmation_note,version,client_request_id} | 200。owner/adminの自己承認可。承認は同卓重複/他人への有効対応/循環を再確認 / Step 3 |
+| POST /participant-links/{id}/revoke | owner、{reason,version,client_request_id} | 200、対応解除と記録のみ。原対局・登録者を削除しない / Step 5 |
+| POST /owner-transfers | owner、{to_user_id,client_request_id} | 201 pending。対象は有効所属の登録者。現在のroleはまだ変更しない / Step 5 |
+| POST /owner-transfers/{id}/accept または /cancel | acceptは指名本人、cancelは現owner。{version,client_request_id} | 200。accept時に現owner/両所属/期限を再確認し、owner参照と2人のroleを一括変更 / Step 5 |
+| GET /events | 運営、cursor/limit | 200 {events,next_cursor}。所属/role/本人対応/招待/引継ぎ等の記録、秘密値は除外 / Step 5 |
+
+Match型はid/league_id/rule_id/season_id/match_date/created_at/recorded_by/status/version/results。結果は原user_id、canonical_user_id、display_name、raw_score、rank、正確なpointを持つ。氏名変更や本人対応で表示名・本人IDの解決が変わっても、原IDと保存済み成績を変えない。取消済みのPATCH/取消解除ルートは初期範囲に設けない。
+
+訂正/取消は同じ操作ID・同じ内容の再送なら元のapplied_versionを返し、新たに変更を適用しない。通常の版不一致は409。理由/confirmation_noteは前後空白除去後1〜500文字で必須。正確値の合計は同順位を1/1/3のように返し、表示安定化のID順で順位差を作らない。参加者範囲は成績のある登録者/ゲスト/退出・除名済みを含み、未参加者を0点で混ぜない。
+
+### 絞り込み・ページング・試行制限
+
+seasonは省略またはallで通算、unassignedでNULLのみ、UUIDで一致シーズンのみ。特定シーズン/未指定の違いを日時の範囲だけで置き換えない。limitは既定20、1〜100、cursorは版・検索条件・最後のソートキーをbase64urlにした不透明値として検証し、不正/条件違いは400。cursor自体を認可に使わない。
+
+履歴は設計の日時/ID降順、検索は正規化名/id昇順、参加者は表示名/id昇順、rules/seasonsは作成時刻/id昇順、変更記録は時刻/id降順。現在状態が変わらない場合に重複/欠落なく辿れることをQ-26で確認する。並行訂正で日時/名前が変わった一覧は更新操作で先頭から再取得し、HTTPをまたぐ完全なDBスナップショットは保証しない。順位表は全対象を正確に集計してから順位を付け、取得ページ内だけで順位を計算しない。
+
+招待の照合は本人＋リーグで10回/分、接続元IPで60回/分を初期の技術上限とし、超過は429 RATE_LIMITED/Retry-After。検索は本人30回/分。複数APIインスタンスでも共有するカウンタをDBで短く更新し、攻撃的な試行のたびに参加者/所属を作らない。Authのメール送信・ログイン試行制限はSupabase側の設定を確認し、その429もWebで再試行待ちにする。上限は運用設定で調整でき、SLOや想定利用規模の確定値とは扱わない。
+
+### 登録・確認・回復とWebの契約
+
+資格情報の発行/保存はGoへ追加せず、Supabase Authを使う。WebはsignUp/signInWithPassword/resetPasswordForEmail/updateUserと、localを明示したsignOutを扱う。確認メールはtoken_hashを使ってWebのGET /auth/confirmへ戻し、許可したemail/recoveryだけをverifyOtpで検証する。成功応答へ更新Cookieを引き継ぎ、token_hashを除去して303で遷移する。回復は/password/update、登録は名前設定を優先して安全な戻り先へ。失敗は/auth/errorから再送/回復依頼へ戻す。
+
+[Supabaseのパスワード認証手順](https://supabase.com/docs/guides/auth/passwords) と [メールテンプレート仕様](https://supabase.com/docs/guides/auth/auth-email-templates) に基づく採用設計。token_hash付きテンプレート・Site URL・許可URL・Email確認・配送設定は実装環境で揃えてQ-21を実行する。通常Cookieの復元/更新を毎回のログイン入力へ置き換えず、確認失敗や一時障害では通常利用完了と表示しない。
+
+### Stepごとの切替
+
+Step 1は既存4保護APIへ認証を追加し、me/名前設定とAuth導線を完成させる。対局の旧body/数値形式はこの段階で最終契約へ一括変更しない。Step 2はリーグ/参加/参照APIと履歴の所属制限、Step 3は新しい計算/保存/ゲスト/正確値の契約、Step 4は主要導線、Step 5は管理/順位表を実装する。
+
+Step 2で旧記録APIを認証だけで公開し続けない。所属を確定できない旧要求は403/409で拒否し、Step 3の新しい記録契約が揃うまで記録導線を停止できる開発用の切替を置く。新旧の対局APIを同時に実データ運用しない。新契約への切替時に旧POST /api/matches・calculateは410 API_RETIRED、旧GET /api/matchesはleague_id必須の所属検証付き移行アダプタを経て撤去する。必要な最小のWeb呼出し変更は対応APIのStepに含め、Step 4のホーム完成を先行したとは扱わない。公開運用の可否は全対象Stepの受入後に判断する。
+
+## 目標画面・状態・導線：設計確認10
+
+D-39に従いスマホ対応Webを対象とする。以下は対応Stepで実装する画面設計であり、現在のURLが全て存在するという意味ではない。リーグUUIDをpathへ含め、別リーグへの切替で取得データ・cursor・roleを共有しない。
+
+| URL | 正常時の操作と遷移 | 空・失敗・復帰 / Step |
+| --- | --- | --- |
+| /login、/signup | ログイン/自己登録、確認待ち・再送・回復依頼へのリンク。検証済み本人をmeへ接続 | 送信中は重複を抑止、資格情報/配送/通信の失敗を区別。再訪で有効なセッションなら入力省略 / Step 1 |
+| /auth/confirm、/auth/error | token_hash検証、Cookie更新後に秘密値をURLから除去。登録は名前設定、recoveryは/password/updateへ | 期限切れ/再利用/不正typeは変更を完了扱いにせず再依頼。外部nextは採用しない / Step 1 |
+| /password/reset、/password/update | 回復依頼、認証済み本人の新パスワード入力。更新後は同じ参加者で安全な入口へ | 依頼受付はアカウント存在・実配送の証明にしない。失敗時は入力修正/再依頼、パスワードを下書き保存しない / Step 1 |
+| /profile/setup、/account | 初回表示名を設定。以後は本人の名前変更と任意のlocalログアウト | 初回は完了まで通常画面へ進ませない。保存失敗時は名前入力保持。アプリ全体の本人状態を更新 / Step 1 |
+| / | 所属リーグ一覧、作成、名前検索/番号入力。選択したリーグのホームへ | 未所属は作成/参加へ。取得失敗は再試行。初期テンプレートを置き換える / Step 4 |
+| /leagues/new、/leagues/search | 作成者をownerとしてリーグ作成、掲載リーグ検索/番号解決 | 同名は番号で識別。0件を失敗扱いにしない。非掲載設定は作成時false / Step 2の最小接続・Step 4の入口 |
+| /join/{group_number} | fragmentのコード/手入力を確認し、本人の参加操作で所属を作る | 登録/ログイン/名前設定後に戻る。期限切れは新招待を依頼。既存所属は通常のリーグへ、再参加はmember / Step 2の参加・Step 4の導線 |
+| /leagues/{id} | リーグホームから記録・履歴・順位表・設定へ。roleに応じて操作を表示 | 未所属/退出/除名後は保護データを破棄し、参加可能な入口へ。API拒否を0件と混同しない / Step 4 |
+| /leagues/{id}/matches/new | DBからrule/season/参加者を取得。未指定シーズン可。4人・素点・対局日時を入力→計算確認→保存→履歴 | 候補取得失敗時は固定メンバーへfallbackしない。入力保持・正確なpoint表示・結果不明時の同一操作再送 / Step 3 |
+| /leagues/{id}/matches、/matches/{match_id}（同リーグ配下） | 日本時間の履歴・詳細、通算/シーズン/未指定と取消状態、追加取得 | 0件は入力へ、503は再試行。旧対局日時NULLは『記録日時』を表示。取得失敗で既存の正しい一覧を空へ置き換えない / Step 2〜4 |
+| /leagues/{id}/ranking | 合計point・対局数・対象範囲・同順位、保存した正確値で比較 | 取消は含めず、対象0件なら空状態。同点の表示順を順位差と見せない / Step 5 |
+| /leagues/{id}/settings | 招待/掲載/ルール/基本シーズン、所属/role/引継ぎ、本人紐付け/解除と操作記録 | 権限表に沿う表示。参加コードは運営のみ。version競合は再取得後に差を確認して再送 / Step 5（招待・紐付けは対応Stepにも最小接続） |
+| /leagues/{id}/matches/{match_id}/edit | owner/adminの訂正・取消。元値と変更後、理由を確認して送信 | memberの直URLは拒否。保存/版競合/取消済みを区別。成功後は履歴と順位表を再取得 / Step 5 |
+
+### 共通の本人状態と入力保持
+
+Webはサーバー/ブラウザのSupabaseクライアントを分け、Proxyの通常/redirect応答へ更新Cookieを引き継ぐ。サーバーで検証したセッションとGoのmeから本人状態を作り、Providerは表示用の共有状態として使う。取得中・未設定・有効・更新不能・内部障害を区別し、Provider内のroleやsubをGoの認可の代替にしない。ユーザーが変われば全リーグデータと下書きを破棄する。
+
+D-27のreturnToはAPP_ORIGINを基準に検証したアプリ内の相対pathだけ。認証画面への循環、//・外部scheme・制御文字・不正な二重エンコードを拒否し、初回名前設定を優先してから戻る。戻り先なしはStep 1では/matches、Step 4以降は/。旧/matches系の直URLは選択済みで有効なリーグへ案内し、複数候補なら選択画面を挟む。未所属なら参加入口へ進み、全件履歴を表示しない。
+
+未保存の対局入力は同じタブのsessionStorageに本人ID/league IDで分離して保持し、保存成功・本人切替・localログアウト・24時間経過で削除する。保持するのは参加者ID/素点/rule/season/date/保存操作IDと結果不明の状態で、資格情報や表示用のpointは保存しない。結果不明の間は入力と操作IDを固定し、401後も同じ本人での復帰時だけ再送する。別タブ・別端末・ブラウザ終了後の下書き復元を保証しない。
+
+参加コードは一時的な参加フローだけに保持し、完了/失効/ログアウトで消す。メール確認を別タブや端末で開いてコードを引き継げない場合は、元の招待リンクを開き直すかコードを入力する導線を出す。確認が終わっただけでリーグ参加を自動実行しない。
+
+localログアウトはSupabaseへlocalを明示し、成功後に同じセッションのタブの本人状態・取得データ・下書きを破棄して/loginへ。失敗時は認証側の終了を完了と表示しない。Goは[Supabaseのセッション仕様](https://supabase.com/docs/guides/auth/sessions#how-to-ensure-an-access-token-jwt-cannot-be-used-after-a-user-signs-out)に沿ってAuthのsession_id行を確認し、終了後に開始した古いJWT要求を拒否する。すでに処理中の要求との順序は設計の共有ロックとQ-10で確認する。
+
+### 表示と対応端末
+
+正確なpointは有限小数ならそのまま、循環小数なら小数4桁までの省略＋…を表示し、詳細で元の分数を確認できるようにする。省略値で再計算・保存しない。raw_scoreは点、pointはptとして区別する。100点の省略入力を提供する場合もラベル/入力例で単位を示し、小数入力を黙ってMath.truncで変換しない。取得/保存エラーは表示文と再試行先を示し、色だけで区別しない。
+
+対象はiOS Safari/Android ChromeとPC Chrome/Safariの検証時点の現行・1つ前のメジャー版を基準とし、実行したOS/ブラウザ版をPRへ残す。幅360/390/768/1280 CSS px、200%文字拡大、縦横表示、タッチとキーボードで主要操作を確認する。入力のラベル、エラーと対象項目の対応、処理中の二重操作抑止、モーダルのフォーカス復帰、横スクロール/文字切れをQ-19/Q-26へ含める。PWA/オフライン記録/ストア配布は今回の実装対象にしない。
 
 ## API契約を変更するときの記録
 
@@ -233,9 +386,9 @@ IDは形式例。実際にはDBが返した新しいIDを返す。
 
 変更PRでは、method/path、認証・認可条件、入力型と必須/NULL、応答型、ステータス、DB副作用、互換性、確認ケースを記す。Goモデル・SQL・Web型/呼び出し・Postman・本書を同時に更新する。IDと表示名、season型、pointの計算主体は、契約変更に特に影響する。
 
-共通エラーを整える際には、コード、利用者向けメッセージ、入力項目との対応、内部ログ用情報を区別する。現在の400/401/500に加え、認可の403や対象なしの404等は対象APIの仕様として確定する。SQLや接続情報をそのまま利用者へ返すことを共通契約にしない。具体的なJSON形式は設計確認9で決め、目標契約の例とQケースを更新する。対応する実装PRでコード・Postmanへ反映し、現行契約の記述を切り替える。
+共通エラーのcode/表示文/field_errorsとステータスは上記の目標契約を使い、対応する実装PRでGo/Web/PostmanとQケースを更新する。SQLや接続情報を利用者へ返さず、実装と受入の証拠が揃ってから現行契約の記述を切り替える。
 
-対局保存の再送・二重登録はD-13、point/rankを受け取るかGoでのみ生成するかは保存契約で確定する。ボタンの無効化だけでAPIの冪等性を保証しない。APIの数やクライアントが増えたら機械可読なOpenAPIを検討し、その場合は手書きの型一覧と二重管理しない。
+対局保存の再送はD-13の操作ID、point/rankはGo生成と未知フィールド拒否の契約に従う。ボタンの無効化だけで冪等性を保証しない。APIの数や外部クライアントが増えたら機械可読なOpenAPIを検討し、その場合は手書きの型一覧と二重管理しない。
 
 ### 互換性に影響する変更の見分け方
 
@@ -244,6 +397,7 @@ IDは形式例。実際にはDBが返した新しいIDを返す。
 | Bearer必須化 | 同じbodyでも旧クライアントは401になる | ブラウザ、SSR、Postmanの転送・環境設定、Q-06〜Q-10 |
 | 履歴user_idを名前から永続IDへ変更 | 型がstringのままでも意味が変わる。名前表示をそのままにできない | 表示名の別項目、Go/Webの型・表示・ID参照、Q-15 |
 | season_idを整数から実DBの型へ統一 | 入力値・NULL・旧データの解釈が変わる | Go/Web/seedの型、移行・旧値の扱い、Q-16 |
+| pointをnumberから正確な分数へ変更 | 数値の表示・比較・合計・保存の型が変わる | Go/API/Web/DB/Postmanと旧値の移行、Q-03/Q-12/Q-16 |
 | point/rankをGoで再計算する | 値の採用・不一致拒否によって、既存の送信例と保存結果が変わる | 保存入力の契約、計算仕様、Q-11/Q-12 |
 | 所属リーグの制限を適用する | 以前返ったデータや成功した書込みが拒否される | D-11/D-12、取得範囲・エラー、Webの権限状態、Q-14/Q-17 |
 | レスポンスの任意項目を追加する | 通常は既存項目を保てるが、厳密な検証や全利用側への影響を確認する | 型・schema・利用箇所、例、必要な回帰確認 |
