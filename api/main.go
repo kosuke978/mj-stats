@@ -48,6 +48,7 @@ func router(database *sql.DB, verifier *auth.Verifier, origins []string) *gin.En
 	normal.GET("/matches", leagues.LegacyHistory())
 	normal.GET("/leagues/:league_id/matches", leagues.History())
 	normal.GET("/leagues", leagues.List)
+	normal.POST("/leagues", (&controllers.LeagueCreator{Auth: guard}).Create)
 	normal.GET("/leagues/:league_id", leagues.Detail())
 	for _, list := range []string{"participants", "members", "rules", "seasons"} {
 		normal.GET("/leagues/:league_id/"+list, leagues.Reference(list))

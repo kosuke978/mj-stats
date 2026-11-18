@@ -247,6 +247,11 @@ func TestStep1RealDBAuth(t *testing.T) {
 	}
 	t.Log("Q-07/Q-10 PASS: expired session, banned subject and 5-second Auth lock timeout rejected without profile creation")
 
+	const creationProbe = `{"name":"未設定の拒否確認","client_request_id":"3a000000-0000-4000-8000-000000000001"}`
+	if status, body := call("POST", "/api/leagues", a.Access, creationProbe); status != 403 || body["error"].(map[string]any)["code"] != "PROFILE_REQUIRED" {
+		t.Fatal("league creation accepted with no participant")
+	}
+
 	// Concurrent first access must converge without overwriting a name.
 	var wg sync.WaitGroup
 	ids := make(chan string, 12)
@@ -289,6 +294,9 @@ func TestStep1RealDBAuth(t *testing.T) {
 			t.Fatal("incomplete profile not denied")
 		}
 	}
+	if status, body := call("POST", "/api/leagues", a.Access, creationProbe); status != 403 || body["error"].(map[string]any)["code"] != "PROFILE_INCOMPLETE" {
+		t.Fatal("league creation accepted before name setup")
+	}
 	for _, body := range []string{`{"name":""}`, `{"name":"\n名前"}`, `{"name":"x","id":"other"}`, `{"name":"a","name":"b"}`, `{"name":null}`} {
 		if code, _ := call("PATCH", "/api/users/me", a.Access, body); code != 400 {
 			t.Fatal("invalid name/body accepted")
@@ -320,6 +328,9 @@ func TestStep1RealDBAuth(t *testing.T) {
 		t.Fatal("same name must preserve separate identities")
 	}
 	t.Log("Q-08 PASS: two real Auth users may choose the same name and keep distinct participant IDs")
+	t.Run("LeagueCreation", func(t *testing.T) {
+		testLeagueCreation(t, ctx, db, admin, verifier, call, a.Access, other.Access, participant, sameName["id"].(string))
+	})
 	t.Run("LeagueReferences", func(t *testing.T) {
 		testLeagueReferences(t, ctx, admin, call, a.Access, other.Access, participant, sameName["id"].(string))
 	})
