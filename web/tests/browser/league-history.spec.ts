@@ -12,7 +12,7 @@ function localSQL(input: string) {
   })
 }
 
-test('Q-14/Q-26: scoped SSR history, league and user switching, and stopped recording', async ({ page, request }) => {
+test('Q-14/Q-26: scoped SSR history, league and user switching, and the league entry link', async ({ page, request }) => {
   const config = JSON.parse(readFileSync('../.local/acceptance.json', 'utf8'))
   expect(config.API_URL).toBe('http://127.0.0.1:55421')
   const info = JSON.parse(execFileSync('docker', ['inspect', container], { encoding: 'utf8' }))[0]
@@ -69,8 +69,8 @@ test('Q-14/Q-26: scoped SSR history, league and user switching, and stopped reco
         '2026-10-31 15:00:00Z'::timestamptz + i*interval '1 day',NULL,'app' FROM generate_series(1,21) i
       RETURNING league_id,id,season_id
     )
-    INSERT INTO public.match_results(league_id,match_id,user_id,raw_score,final_point,rank)
-      SELECT league_id,id,'${a.id}',CASE WHEN season_id IS NULL THEN 25000 ELSE 33000 END,16.7,1 FROM inserted;
+    INSERT INTO public.match_results(league_id,match_id,user_id,raw_score,final_point,rank,final_point_numerator,final_point_denominator)
+      SELECT league_id,id,'${a.id}',CASE WHEN season_id IS NULL THEN 25000 ELSE 33000 END,16.7,1,167,10 FROM inserted;
     COMMIT;`)
   try {
     await page.setViewportSize({ width: 390, height: 844 })
@@ -82,7 +82,7 @@ test('Q-14/Q-26: scoped SSR history, league and user switching, and stopped reco
     const first = await page.request.get(pathA)
     expect(first.headers()['cache-control']).toContain('no-store')
     expect(await first.text()).toContain('33,000')
-    await expect(page.getByText('対局の計算・記録は現在利用できません。')).toBeVisible()
+    await expect(page.getByRole('link', { name: '対局を入力' })).toHaveAttribute('href', pathA + '/new')
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBeTruthy()
     await page.getByRole('link', { name: '次の対局を表示' }).click()
     await expect(page).toHaveURL(/cursor=/)
@@ -120,7 +120,7 @@ test('Q-14/Q-26: scoped SSR history, league and user switching, and stopped reco
     await expect(page.getByRole('link', { name: 'ブラウザリーグB オーナー' })).toBeVisible()
     await expect(page.getByRole('link', { name: /ブラウザリーグA/ })).toHaveCount(0)
     await page.goto('/matches/new')
-    await expect(page.getByText('対局の計算・記録は現在利用できません。')).toBeVisible()
+    await expect(page.getByRole('link', { name: '所属リーグを選ぶ' })).toBeVisible()
     await expect(page.getByRole('combobox')).toHaveCount(0)
   } finally {
     localSQL(`BEGIN;

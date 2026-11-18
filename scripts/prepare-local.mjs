@@ -28,7 +28,7 @@ mkdirSync('.local', { recursive: true, mode: 0o700 })
 const password = randomBytes(32).toString('hex')
 execFileSync('docker', ['exec', '-i', container, 'psql', '-U', 'postgres', '-d', 'postgres', '-v', 'ON_ERROR_STOP=1'], { input: `ALTER ROLE mjstats_api PASSWORD '${password}';\n`, stdio: ['pipe', 'ignore', 'pipe'] })
 const api = `DATABASE_URL=postgresql://mjstats_api:${password}@127.0.0.1:55422/postgres?sslmode=disable\nSUPABASE_URL=${status.API_URL}\nALLOWED_ORIGINS=http://localhost:3000\nPORT=8080\n`
-const web = `NEXT_PUBLIC_API_URL=http://localhost:8080\nNEXT_PUBLIC_SUPABASE_URL=${status.API_URL}\nNEXT_PUBLIC_SUPABASE_ANON_KEY=${status.ANON_KEY}\nNEXT_PUBLIC_RULE_ID=99999999-9999-9999-9999-999999999999\nAPP_ORIGIN=http://localhost:3000\nAUTH_FLOW_SECRET=${randomBytes(32).toString('hex')}\n`
+const web = `NEXT_PUBLIC_API_URL=http://localhost:8080\nNEXT_PUBLIC_SUPABASE_URL=${status.API_URL}\nNEXT_PUBLIC_SUPABASE_ANON_KEY=${status.ANON_KEY}\nAPP_ORIGIN=http://localhost:3000\nAUTH_FLOW_SECRET=${randomBytes(32).toString('hex')}\n`
 writeFileSync('.local/api.env', api, { mode: 0o600 })
 writeFileSync('.local/web.env', web, { mode: 0o600 })
 writeFileSync('.local/acceptance.json', JSON.stringify(status), { mode: 0o600 })

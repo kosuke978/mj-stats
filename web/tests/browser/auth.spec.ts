@@ -143,15 +143,15 @@ test('Q-09/Q-10/Q-21: registration, browser/SSR, refresh, recovery and local log
     (await session(context)).value.refresh_token !== beforeRedirect,
   ).toBeTruthy()
   await page.goto('/matches/new')
-  await expect(page.getByText('対局の計算・記録は現在利用できません。')).toBeVisible()
+  await expect(page.getByText('所属リーグの履歴から対局を入力できます。')).toBeVisible()
   await expect(page.getByRole('button', { name: '計算結果をプレビュー' })).toHaveCount(0)
   const stopped = await context.request.post(`${api}/api/matches/calculate`, {
     headers: { Authorization: `Bearer ${(await session(context)).value.access_token}` },
     data: { players: [] },
   })
-  expect(stopped.status()).toBe(409)
-  expect((await stopped.json()).error.code).toBe('RECORDING_UNAVAILABLE')
-  await page.getByRole('link', { name: '履歴を見る' }).click()
+  expect(stopped.status()).toBe(410)
+  expect((await stopped.json()).error.code).toBe('API_RETIRED')
+  await page.getByRole('link', { name: '所属リーグを選ぶ' }).click()
   await expect(page).toHaveURL('/matches')
   await expect(page.getByText('所属しているリーグがありません。')).toBeVisible()
   const ssr = await context.request.get('http://localhost:3000/matches')
