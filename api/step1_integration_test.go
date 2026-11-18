@@ -361,20 +361,20 @@ func TestStep1RealDBAuth(t *testing.T) {
 		testLeagueHistory(t, ctx, admin, call, a.Access, other.Access, participant, sameName["id"].(string))
 	})
 
+	t.Run("LeagueMatches", func(t *testing.T) {
+		testLeagueMatches(t, ctx, admin, call, a.Access, other.Access, participant, sameName["id"].(string))
+	})
+
 	before = fingerprint()
 	for _, p := range paths[1:3] {
 		code, body := call(p.method, p.path, a.Access, p.body)
-		if code != 409 || body["error"].(map[string]any)["code"] != "RECORDING_UNAVAILABLE" {
+		if code != 410 || body["error"].(map[string]any)["code"] != "API_RETIRED" {
 			t.Fatal("old recording route is still active")
 		}
 	}
 	verifyStatus(t, call, "GET", "/api/matches", a.Access, 400, "INVALID_INPUT")
 	if before != fingerprint() {
 		t.Fatal("stopped recording route changed the database")
-	}
-	seed, _ := os.ReadFile("db/seed.sql")
-	if _, err = admin.ExecContext(ctx, string(seed)); err != nil {
-		t.Fatal("isolated legacy fixture")
 	}
 	t.Log("Q-14/Q-17 cutover PASS: old calculation/save refuse with no side effects; unscoped history closed")
 
@@ -485,20 +485,29 @@ func TestStep1RealDBAuth(t *testing.T) {
 
 	// Deletion preserves participant ID and references and rejects the old JWT.
 	// Give this participant real owned/recorded/result references in this isolated fixture.
-	var league, match string
+	var league, match, legacyRule string
 	if admin.QueryRowContext(ctx, `INSERT INTO public.leagues(name,owner_id) VALUES('QA preservation',$1) RETURNING id`, participant).Scan(&league) != nil {
 		t.Fatal("owner fixture")
 	}
 	if _, err = admin.ExecContext(ctx, `INSERT INTO public.league_members(league_id,user_id,role,participant_kind) VALUES($1,$2,'owner','registered')`, league, participant); err != nil {
 		t.Fatal("member fixture")
 	}
-	if admin.QueryRowContext(ctx, `INSERT INTO public.matches(recorded_by,rule_id) VALUES($1,'99999999-9999-9999-9999-999999999999') RETURNING id`, participant).Scan(&match) != nil {
+	if admin.QueryRowContext(ctx, `INSERT INTO public.rules(name,uma_1,uma_2,uma_3,uma_4)
+		VALUES('QA preservation rule',20,10,-10,-20) RETURNING id`).Scan(&legacyRule) != nil {
+		t.Fatal("legacy rule fixture")
+	}
+	if admin.QueryRowContext(ctx, `INSERT INTO public.matches(recorded_by,rule_id) VALUES($1,$2) RETURNING id`, participant, legacyRule).Scan(&match) != nil {
 		t.Fatal("recorder fixture")
 	}
-	if _, err = admin.ExecContext(ctx, `INSERT INTO public.match_results(match_id,user_id,raw_score,final_point,rank) VALUES($1,$2,25000,0,1)`, match, participant); err != nil {
+	if _, err = admin.ExecContext(ctx, `INSERT INTO public.match_results(match_id,user_id,raw_score,final_point,rank,
+		final_point_numerator,final_point_denominator) VALUES($1,$2,25000,0,1,0,1)`, match, participant); err != nil {
 		t.Fatal("result fixture")
 	}
-	if _, err = admin.ExecContext(ctx, `INSERT INTO public.match_results(match_id,user_id,raw_score,final_point,rank) SELECT $1,v.id::uuid,25000,0,v.rank FROM (VALUES ('11111111-1111-1111-1111-111111111111',2),('22222222-2222-2222-2222-222222222222',3),('33333333-3333-3333-3333-333333333333',4)) v(id,rank)`, match); err != nil {
+	if _, err = admin.ExecContext(ctx, `WITH players AS (
+		INSERT INTO public.users(name) SELECT 'QA legacy player' FROM generate_series(1,3) RETURNING id
+	) INSERT INTO public.match_results(match_id,user_id,raw_score,final_point,rank,
+		final_point_numerator,final_point_denominator)
+	  SELECT $1,id,25000,0,row_number() OVER (ORDER BY id)+1,0,1 FROM players`, match); err != nil {
 		t.Fatal("four result fixture")
 	}
 	// The same lock boundary must order a concurrent hard Auth deletion.

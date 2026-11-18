@@ -9,8 +9,8 @@ import (
 	"github.com/kosuke/mj-stats-api/httpx"
 )
 
-func RecordingUnavailable(c *gin.Context) {
-	httpx.Error(c, 409, "RECORDING_UNAVAILABLE", "対局の計算・記録は現在利用できません", nil)
+func RecordingRetired(c *gin.Context) {
+	httpx.Error(c, 410, "API_RETIRED", "所属リーグの対局入力をご利用ください", nil)
 }
 
 func (lc *LeagueController) LegacyHistory() gin.HandlerFunc {
@@ -74,31 +74,38 @@ func (lc *LeagueController) history(c *gin.Context, ctx context.Context, tx *sql
 			return nil
 		}
 	}
-	if status == "cancelled" {
-		return gin.H{"matches": []any{}, "next_cursor": nil}
-	}
-
-	if _, err := tx.ExecContext(ctx, `SELECT set_config('mjstats.league_id',$1,true)`, l.ID); err != nil {
-		httpx.Unavailable(c)
-		return nil
-	}
 	var after any
 	if cursor.ID != "" {
 		after = cursor.ID
 	} else {
 		cursor.Key, cursor.Second = "-infinity", "-infinity"
 	}
-	rows, err := tx.QueryContext(ctx, leagueHistorySQL, l.ID, season, seasonID, after, cursor.Key, cursor.Second, limit+1)
+	rows, err := tx.QueryContext(ctx, leagueHistorySQL, l.ID, season, seasonID, after, cursor.Key, cursor.Second, limit+1, status)
 	return pageResponse(c, rows, err, limit, cursor)
 }
 
-// Select the page before joining results. Keep stored numeric points and ranks
-// as-is, and use the original participant ID to resolve the current name.
+// The list, detail and save responses use stored points and ranks.
+const matchJSON = `json_build_object(
+		'id',m.id,'league_id',m.league_id,'season_id',m.season_id,'rule_id',m.rule_id,'recorded_by',m.recorded_by,
+		'status',m.status,'version',m.version::text,
+		'match_date',to_char(m.match_date AT TIME ZONE 'UTC','YYYY-MM-DD"T"HH24:MI:SS.US"Z"'),
+		'created_at',to_char(m.created_at AT TIME ZONE 'UTC','YYYY-MM-DD"T"HH24:MI:SS.US"Z"'),
+		'results', COALESCE((
+			SELECT json_agg(json_build_object('user_id',r.user_id,
+				'canonical_user_id',COALESCE(p.registered_user_id,r.user_id),'display_name',COALESCE(person.name,u.name),
+				'raw_score',r.raw_score,'rank',r.rank,'point',json_build_object(
+					'numerator',r.final_point_numerator::text,'denominator',r.final_point_denominator::text)) ORDER BY r.rank,r.user_id)
+			FROM public.match_results r JOIN public.users u ON u.id=r.user_id
+			LEFT JOIN public.participant_links p ON p.league_id=r.league_id AND p.guest_user_id=r.user_id AND p.status='active'
+			LEFT JOIN public.users person ON person.id=p.registered_user_id
+			WHERE r.league_id=m.league_id AND r.match_id=m.id AND r.data_origin='app'
+		),'[]'::json))`
+
 const leagueHistorySQL = `
 	WITH page AS (
-		SELECT id, league_id, rule_id, season_id, recorded_by, match_date, created_at
+		SELECT id, league_id, rule_id, season_id, recorded_by, match_date, created_at, status, version
 		FROM public.matches
-		WHERE league_id=$1 AND data_origin='app'
+		WHERE league_id=$1 AND data_origin='app' AND ($8='all' OR status=$8)
 		  AND ($2='all' OR ($2='unassigned' AND season_id IS NULL) OR season_id=$3::uuid)
 		  AND ($4::uuid IS NULL OR
 		    (COALESCE(match_date,created_at,'-infinity'),COALESCE(created_at,'-infinity'),id)
@@ -106,16 +113,7 @@ const leagueHistorySQL = `
 		ORDER BY COALESCE(match_date,created_at) DESC NULLS LAST, created_at DESC NULLS LAST, id DESC
 		LIMIT $7
 	)
-	SELECT json_build_object(
-		'id',m.id,'league_id',m.league_id,'season_id',m.season_id,'rule_id',m.rule_id,'recorded_by',m.recorded_by,
-		'match_date',to_char(m.match_date AT TIME ZONE 'UTC','YYYY-MM-DD"T"HH24:MI:SS.US"Z"'),
-		'created_at',to_char(m.created_at AT TIME ZONE 'UTC','YYYY-MM-DD"T"HH24:MI:SS.US"Z"'),
-		'results', COALESCE((
-			SELECT json_agg(json_build_object('user_id',r.user_id,'display_name',u.name,
-				'raw_score',r.raw_score,'rank',r.rank,'point',r.final_point) ORDER BY r.rank,r.user_id)
-			FROM public.match_results r JOIN public.users u ON u.id=r.user_id
-			WHERE r.league_id=m.league_id AND r.match_id=m.id AND r.data_origin='app'
-		),'[]'::json)),
+	SELECT ` + matchJSON + `,
 		COALESCE(to_char(COALESCE(m.match_date,m.created_at) AT TIME ZONE 'UTC','YYYY-MM-DD"T"HH24:MI:SS.US"Z"'),'-infinity'),
 		COALESCE(to_char(m.created_at AT TIME ZONE 'UTC','YYYY-MM-DD"T"HH24:MI:SS.US"Z"'),'-infinity'),
 		m.id

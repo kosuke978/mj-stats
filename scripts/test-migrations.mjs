@@ -8,6 +8,7 @@ import { testMatchAttribution } from './test-match-attribution.mjs'
 import { eventTableShape, testLeagueCreationEvents } from './test-league-creation-events.mjs'
 import { testLeagueInvites } from './test-league-invites.mjs'
 import { testParticipation } from './test-league-participation.mjs'
+import { testExactMatches } from './test-exact-matches.mjs'
 const container = 'supabase_db_mj-stats-step1'
 const info = JSON.parse(execFileSync('docker', ['inspect', container], { encoding: 'utf8' }))[0]
 if (info.Config.Labels['com.supabase.cli.project'] !== 'mj-stats-step1' || !info.NetworkSettings.Ports['5432/tcp'].some(p => p.HostPort === '55422')) throw new Error('Refusing unknown environment')
@@ -45,6 +46,7 @@ const historyCutover = '20261118003000_league_history_cutover.sql'
 const leagueCreationEvents = '20261118004000_league_creation_events.sql'
 const leagueInvites = '20261118005000_league_invites.sql'
 const leagueParticipation = '20261118006000_league_participation.sql'
+const step3Files = files.slice(files.indexOf(leagueParticipation) + 1)
 const step22Files = files.slice(files.indexOf(leagueFoundation) + 1, files.indexOf(historyCutover))
 const migration = file => readFileSync(`supabase/migrations/${file}`, 'utf8')
 // Isolated acceptance ledger using the Supabase history shape. Exact SQL and
@@ -80,7 +82,7 @@ try {
   stage = 'empty full application'
   for (const file of files) apply(file, applied)
   const emptyShape = Object.fromEntries(Object.entries(queries).map(([name,q]) => [name, JSON.parse(sql(q))]))
-  const additionalTables = ['league_events', 'league_invites', 'api_rate_limits']
+  const additionalTables = ['league_events', 'league_invites', 'api_rate_limits', 'participant_links', 'match_revisions']
   const emptyAdditionalShapes = additionalTables.map(table => JSON.parse(sql(eventTableShape(table))))
   console.log('PASS empty database: all migrations + complete history applied as postgres')
   // Roll back this test-only schema rebuild in a disposable database, never the
@@ -184,15 +186,13 @@ try {
   console.log('PASS 2-5 invitation migration preserves old values and 2-4 creation event')
   const beforeParticipation = sql(step22Query)
   apply(leagueParticipation, applied)
-  if (sql(step22Query) !== beforeParticipation
-    || !sameJSON(emptyAdditionalShapes, additionalTables.map(table => JSON.parse(sql(eventTableShape(table)))))) throw new Error('2-6 rows or schema differ')
-  console.log('PASS 2-6 participation migration preserves older rows; empty/incremental supplemental schemas match')
+  if (sql(step22Query) !== beforeParticipation) throw new Error('2-6 rows differ')
+  console.log('PASS 2-6 participation migration preserves older rows')
 
   if (beforeStep22 !== sql(step21Query)) throw new Error('2-1 values changed')
   console.log('PASS 2-1 upgrade: normal and legacy rows unchanged; older NULL/inverted dates and numeric values preserved')
   if (step1Before !== sql(step1Query)) throw new Error('Step 1 values changed')
-  for (const [name,q] of Object.entries(queries)) if (!sameJSON(emptyShape[name],JSON.parse(sql(q)))) throw new Error(`Empty/incremental ${name} differ`)
-  console.log('PASS empty/incremental schema equality; all Step 1 columns preserved')
+  console.log('PASS all Step 1 columns preserved')
   const after = sql(afterQuery)
   if (before !== after) throw new Error('Legacy value or reference changed')
   const counts = JSON.parse(sql(`SELECT json_build_object('users',(SELECT count(*) FROM public.users),'matches',(SELECT count(*) FROM public.matches),'results',(SELECT count(*) FROM public.match_results),'legacy',(SELECT count(*) FROM public.users WHERE participant_kind='legacy' AND auth_id IS NULL AND profile_completed_at IS NULL));`))
@@ -200,12 +200,12 @@ try {
   if (counts.users !== expectedUsers || counts.legacy !== expectedUsers || counts.matches !== (snapshot ? snapshot.matches.length : 19) || counts.results !== (snapshot ? snapshot.match_results.length : 76)) throw new Error('Legacy counts')
   if (sql(`SELECT NOT has_schema_privilege('mjstats_auth_validator','auth','USAGE') AND NOT has_any_column_privilege('mjstats_auth_validator','auth.users','SELECT,UPDATE');`) !== 't') throw new Error('Validator has direct Auth access')
   stage = 'replay rejection'
-  for (const file of files.slice(1)) {
+  for (const file of applied.slice(1)) {
     let rejected = false
     try { sql(migration(file)) } catch { rejected = true }
     if (!rejected || after !== sql(afterQuery)) throw new Error('Replay changed rows')
   }
-  const latestVersion = files.at(-1).split('_')[0]
+  const latestVersion = applied.at(-1).split('_')[0]
   for (const damage of [
     `DELETE FROM supabase_migrations.schema_migrations WHERE version='${latestVersion}'`,
     `UPDATE supabase_migrations.schema_migrations SET statements=ARRAY['changed'] WHERE version='${latestVersion}'`,
@@ -235,6 +235,29 @@ try {
   testLeagueInvites(sql, fullRowQuery)
   stage = 'participation and shared limiter permissions'
   testParticipation(sql, fullRowQuery)
+  stage = 'Step 3 exact recording upgrade'
+  // Keep both the original copy and attributed history created by the Step 2 tests.
+  const beforeStep3 = sql(fullRowQuery)
+  for (const file of step3Files) apply(file, applied)
+  if (beforeStep3 !== sql(fullRowQuery)) throw new Error('Step 3 changed old values or references')
+  if (sql(`SELECT bool_and(final_point IS NOT NULL
+      AND final_point * final_point_denominator = final_point_numerator
+      AND gcd(final_point_numerator,final_point_denominator::bigint)=1)
+    FROM public.match_results`) !== 't') throw new Error('Backfilled points are not exact/reduced')
+  for (const [name, query] of Object.entries(queries)) {
+    if (!sameJSON(emptyShape[name], JSON.parse(sql(query)))) throw new Error(`Empty/incremental ${name} differ`)
+  }
+  if (!sameJSON(emptyAdditionalShapes, additionalTables.map(table => JSON.parse(sql(eventTableShape(table)))))) {
+    throw new Error('Empty/incremental supplemental schemas differ')
+  }
+  for (const file of step3Files) {
+    let rejected = false
+    try { sql(migration(file)) } catch { rejected = true }
+    if (!rejected || beforeStep3 !== sql(fullRowQuery)) throw new Error('Step 3 replay changed rows')
+  }
+  console.log('PASS Step 3 empty/incremental schema and ledger; old IDs/values/references and legacy attribution preserved; exact reduced backfill; raw replay rejected')
+  stage = 'Step 3 exact recording constraints and permissions'
+  testExactMatches(sql, projectionQuery(JSON.parse(sql(queries.columns))))
   if (!snapshot) console.log('Actual-copy acceptance is separate: rerun with --snapshot <read-only-export.json>.')
 } catch (error) {
   // SQLSTATE only: never emit row values, query text or connection details.

@@ -90,6 +90,10 @@ func (lc *LeagueController) scoped(id func(*gin.Context) string, read leagueRead
 			httpx.Unavailable(c)
 			return
 		}
+		if _, err := tx.ExecContext(ctx, `SELECT set_config('mjstats.league_id',$1,true)`, l.ID); err != nil {
+			httpx.Unavailable(c)
+			return
+		}
 		body := read(c, ctx, tx, l)
 		if body == nil {
 			return
