@@ -7,7 +7,11 @@ import (
 	"unicode/utf8"
 )
 
-func NormalizeName(raw string) (string, error) {
+func NormalizeName(raw string) (string, error) { return normalizeName(raw, 30) }
+
+func NormalizeLeagueName(raw string) (string, error) { return normalizeName(raw, 100) }
+
+func normalizeName(raw string, max int) (string, error) {
 	if !utf8.ValidString(raw) {
 		return "", errors.New("invalid name")
 	}
@@ -18,7 +22,7 @@ func NormalizeName(raw string) (string, error) {
 	}
 	name := strings.TrimFunc(raw, unicode.IsSpace)
 	count := utf8.RuneCountInString(name)
-	if count < 1 || count > 30 {
+	if count < 1 || count > max {
 		return "", errors.New("invalid name")
 	}
 	return name, nil

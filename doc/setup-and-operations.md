@@ -42,7 +42,6 @@ GoのDATABASE_URLは専用mjstats_apiを使う。所有者/BYPASSRLSロールを
 NEXT_PUBLIC_API_URL=http://localhost:8080
 NEXT_PUBLIC_SUPABASE_URL=https://YOUR_PROJECT_REF.supabase.co
 NEXT_PUBLIC_SUPABASE_ANON_KEY=YOUR_PUBLIC_ANON_KEY
-NEXT_PUBLIC_RULE_ID=99999999-9999-9999-9999-999999999999
 APP_ORIGIN=http://localhost:3000
 AUTH_FLOW_SECRET=REPLACE_WITH_RANDOM_SECRET_AT_LEAST_32_CHARACTERS
 ```
@@ -54,7 +53,6 @@ AUTH_FLOW_SECRET=REPLACE_WITH_RANDOM_SECRET_AT_LEAST_32_CHARACTERS
 | `NEXT_PUBLIC_SUPABASE_ANON_KEY` | 公開クライアント用キー。JWT署名用secret・DBパスワード・service roleを入れない |
 | `APP_ORIGIN` | サーバー専用の正規Web origin。確認URLと安全なリダイレクト/同一origin検証へ使用 |
 | `AUTH_FLOW_SECRET` | サーバーだけに持つ32文字以上のランダム秘密値。10分の回復確認Cookieを署名。公開しない |
-| `NEXT_PUBLIC_RULE_ID` | 保存対象の実在するrule UUID。例はseed用ID。Step 2で固定依存を解消する |
 
 `NEXT_PUBLIC_` はブラウザへ公開される値である。DB接続先とAuthのプロジェクトを揃え、別環境のUIDやルールを混ぜない。値を変えたら開発サーバーを再起動する。本番向けの公開変数はビルド時の値にも注意する。
 
@@ -86,7 +84,7 @@ node scripts/run-local.mjs web-start
 
 ### migrationとAuth権限の適用
 
-- 空の専用スタック：CLI start/resetが `20261117000000_baseline.sql` → `20261117001000_auth_profile.sql` → `20261117002000_managed_auth_validation.sql` → `20261118000000_league_membership_foundation.sql` を通常postgresとして適用する。D-40の旧 `supabase/permissions/step1_auth.sql` は適用しない。
+- 空の専用スタック：CLI start/resetが [migrations](../supabase/migrations) の8本を時刻順に通常postgresとして適用する。D-40の旧 `supabase/permissions/step1_auth.sql` は適用しない。
 - baselineは観測済み7表39列20制約9 indexを再現する。既存DBへCREATE TABLEを再実行しない。既存環境の正確な列・制約・index・RLS・policy・triggerを照合した後だけbaselineを履歴へ記録し、増分を適用する。再開後の実コピーで一致と増分保全を確認した。元の共有DBには適用しない。
 - `node scripts/test-migrations.mjs` は識別済みコンテナ内の使い捨てDBで、Authメタデータ契約と合成旧データを用意して増分と再適用拒否を確認する。`--snapshot .local/legacy-actual-20261117.json` を指定すると実コピーの構造を照合し、全元列値・参照を比較する。元のスナップショットは `api` で `go run ./cmd/legacy-snapshot ../.local/legacy-actual-20261117.json` によりREAD ONLY取得する。生成した一時DBだけをfinallyで削除する。
 - D-41ではpostgres所有の非公開viewを通じて限定7列と行ロックを委譲する。関数所有はNOLOGIN/NOBYPASSRLS、viewのSELECT/UPDATE(id)だけでAuthへの直接権限は持たない。viewへの実UPDATEはtriggerで拒否する。AuthのRLS/policyを変更せず、所有者やsupabase_adminの追加作業を要求しない。
@@ -159,6 +157,48 @@ migration試験は環境を識別してから使い捨てDBを作る。空DB全�
 
 戻す必要がある場合も、既存行を削除して再適合させず、書込みを止めて対象・直前版・保存コピーを確認する。今回の適用先は専用ローカルだけ。共有/QAへ逆DDLを適用しない。最新の結果と未実施は[2-1の検証記録](quality-and-acceptance.md#step-2--2-1の検証記録2026-11-18)を参照する。
 
+## Step 2 / 2-2のローカル適用と検証
+
+専用ローカルでは既存4本を確認し、`20261118001000_rule_season_foundation.sql` → `20261118002000_match_attribution.sql` の順に適用する。上記と同じローカル識別チェック、`npm run supabase -- migration up`、合成/保存済み実コピーの `npm run test:migrations`、Goの実Auth回帰を使う。旧コピーの取得済みファイルは読み取り専用で使う。2-1未適用の既存管理QA・元共有DB・本番への適用は後続の承認範囲。
+
+2本目の適用後はNULLの対局日時を読める互換修正入りGoで起動する。旧履歴JSONは既知の記録日時で従来表示を維持し、DBへ日時を書き戻さない。既存のrule_idやcreated_at自体がNULLの行を旧APIで返す契約は今回変えていない。旧書込みはlegacy領域だけに残り、通常対局は後続の対応が揃ってから書き始める。2-3/Step 3の切替順は [設計](architecture.md#step-2--2-2の対局結果の帰属)、検証結果は [品質文書](quality-and-acceptance.md#step-2--2-2の検証記録) を参照する。
+
+## Step 2 / 2-3のローカル切替
+
+1. 専用ローカル `mj-stats-step1`、Docker label、DBポート55422、未link、既存6版を確認する。元共有DB・本番・既存管理QAは適用先に含めない。
+2. GoとWebの旧プロセスを止める。旧GoのDB接続が終了したのを確認し、`npm run supabase -- migration up` で `20261118003000_league_history_cutover.sql` を適用する。
+3. 2-3対応Goを起動し、リーグ認可、旧履歴のscopeなし400、旧POSTの409、通常INSERTの拒否を確認してから対応Webを起動する。
+4. 不具合時は履歴と記録の入口を停止したまま修正する。通常行が読めるpolicyと旧Goの組合せへ戻さず、旧INSERT権限も再付与しない。元の行値を復元する必要はない。別環境で再現する場合は保存済みコピーを専用ローカルの一時DBで使う。
+
+## Step 2 / 2-4のローカル適用
+
+2-3までの既存7版を照合後、専用ローカルだけに `20261118004000_league_creation_events.sql` を適用し、対応Goを起動する。8本の空DB構築、合成/保存済みコピーの `npm run test:migrations`、実Authの `TestStep1RealDBAuth` を使う。既存の管理QA・共有DB・本番への適用は後続判断。今回のGoを使う場合は先に増分を適用する。問題があれば作成入口を停止して対応版を修正し、作成済みリーグやイベントを削除して復旧しない。
+
+## Step 2 / 2-5のローカル適用と招待鍵
+
+`mj-stats-step1` のDocker labelとDBポート55422、未link、2-4までの8版を照合する。`npm run supabase -- migration up` で `20261118005000_league_invites.sql` を適用し、対応Goを起動する。招待は追加の表・イベント権限を使う。問題時は招待入口を停止し、招待・操作記録をDBに保ったまま対応版を修正する。2-3の履歴認可と旧記録停止を維持する。元共有DB・既存管理QA・本番は適用対象外。
+
+- Goの `APP_ORIGIN` はWebのHTTP(S)オリジンを設定する。ローカルの例は `http://localhost:3000`。HTTP Host、転送ヘッダー、本文は生成先に使わない。
+- `INVITE_KEYS_JSON` は、キーを正の整数の10進文字列とし、値を32バイト以上のランダム鍵の標準Base64（必要なパディングを含む）とするJSONオブジェクト。`INVITE_CURRENT_KEY_VERSION` は発行に使う版で、JSON内にある正の整数を指定する。両設定が空なら招待管理だけ503。片方だけ設定した場合や形式・オリジンが不正な場合は起動時に一般化した設定エラーを返す。
+- 鍵はGoの環境用シークレットに設定する。鍵・発行応答のコードやリンクは共有.env、ログ、操作記録、Postmanの例・共有履歴に残さない。旧鍵がないかhashが一致しない有効招待の再表示は503。
+- 鍵切替は、まず現行版を変えず、新版の鍵を全Goプロセスで読めるようにしてから発行版を新版に変更する。旧版で発行した未失効・期限内の招待が全て期限切れか失効になるまで旧鍵を保持する。発行版を戻すときも、その間に発行した新版の鍵を保持する。
+- 合成と保存済み実コピーの `npm run test:migrations`、`api` の `MJSTATS_INTEGRATION=1 GIN_MODE=release go test -run TestStep1RealDBAuth -count=1 -v .` で確認する。実Auth試験の招待鍵はプロセス内にだけ生成される。
+
+## Step 2 / 2-6のローカル適用と試行制限
+
+2-5までの9版を照合し、専用ローカルに `20261118006000_league_participation.sql` を適用してから対応Goを起動する。問題時は参加・検索を停止し、既存の所属・参加イベント・招待と2-3の履歴境界を保持する。
+
+- Go専用の `RATE_LIMIT_HASH_KEY` は32バイト以上の乱数を標準Base64で設定し、全インスタンスで共有する。鍵変更はカウントのキーを切り替える。設定が空のままなら検索・招待照合は503とし、各上限も空の場合はGoを起動できる。
+- 既定は検索30回/本人/分、照合10回/本人・リーグ/分と60回/接続元/分。`SEARCH_RATE_LIMIT`、`INVITE_LEAGUE_RATE_LIMIT`、`INVITE_IP_RATE_LIMIT` で上書きできる。DBの分単位固定ウィンドウを共有し、超過は429、`Retry-After` は次のウィンドウまでの秒数。照合・再送のカウントは所属の書込みと別に確定し、拒否やrollbackでも残る。
+- 既定はTCPの接続元を採用する。`TRUSTED_PROXY_CIDRS` を設定する場合、管理下の経路のCIDRを列挙し、そのプロキシがクライアントからの転送ヘッダーを正規化するように構成する。Goは信頼済み接続元の `X-Forwarded-For` だけを評価する。ブラウザから任意の転送ヘッダーで接続元を変えられないことを公開前に確認する。
+- カウンタは接続元や本人・リーグの生値を保持せず、用途を含めてHMAC化する。Go起動時と1分ごとに、ウィンドウ開始から2分を過ぎた行を削除する。Go停止中は削除が保留される。招待コード、平文IP、検索語をカウンタや操作記録・ログへ保存しない。
+
+## Step 2の最終切替と確認
+
+専用ローカルはmigration全10版の履歴を確認し、2-6のGoを起動してから2-7のWebビルドを起動する。2-2以前から適用する場合は、上記の2-3で旧Go/Webを停止した切替を先に行う。招待鍵と試行制限用鍵はGo側だけに設定する。旧Goの全件履歴や旧計算・保存への復旧を行わず、切替障害時は影響する入口を停止して対応版を修正する。既存行と操作記録を保持する。
+
+ブラウザ確認は専用Goと本番モードのWebを起動後、`web` で `npm run test:browser`。参加試験は当該ローカルだけに使い、試験リーグとその所属・招待・対局をfixtureに限定する。既存管理QAは2-1以後の増分が未適用。QAで追加受入を実施する場合は対象Ref、2-1〜2-6の増分、旧プロセス停止、保存コピー・復旧方針、Authと参加/履歴の主要操作を照合して適用承認を得る。
+
 ## 起動
 
 DBのスキーマと必要データ、環境変数を準備してから、別ターミナルで起動する。
@@ -209,32 +249,15 @@ DB接続確認：
 curl -i http://localhost:8080/api/health
 ```
 
-計算確認（DB書き込みなし）：
+2-3の確認は同じ専用ローカルAuthの本人Bearerを使用する。access tokenのローカル値は履歴やログへ残さない。
 
-```bash
-curl -i -X POST http://localhost:8080/api/matches/calculate \
-  -H 'Content-Type: application/json' \
-  -d '{"players":[{"player_id":"p1","raw_score":40000},{"player_id":"p2","raw_score":30000},{"player_id":"p3","raw_score":20000},{"player_id":"p4","raw_score":10000}]}'
-```
-
-Step 1ブランチではBearerなしのこの呼び出しは401となる。正しいJWTと名前設定済みなら200でポイント `50 / 10 / -20 / -40` を返す旧契約を維持する。認証を外して旧手順へ合わせない。
-
-画面と保存の確認は専用DBで次の順に行う。
-
-1. `/login` からテストアカウントでログインし、`/matches` への遷移を確認する。
-2. `/matches/new` で異なる登録済みメンバー4名と合計10万点を入力し、計算プレビューを確認する。
-3. 保存後、DBの `matches` 1件と `match_results` 4件、履歴表示を確認する。現在はログイン者が選択メンバーや記録者に紐付く保証はない。
-4. 入力不足・重複メンバー・不正合計・同点・ゲストでのプレビューと保存拒否を確認する。ゲスト保存拒否は現状の制限であり最終要件ではない。
-
-この確認が成功しても、JWT署名検証、リーグ権限、Go側の合計点検証まで完成したとは判断しない。
+1. `/login` → `/matches` で有効所属を確認し、リーグを選ぶ。空の所属は案内を表示する。
+2. `/matches/league/{league_id}` で履歴・シーズン・次ページを確認する。別の所属へ切り替え、別リーグの成績が混ざらないことを確認する。
+3. `/matches/new` は停止表示。名前設定済み本人でも旧計算・保存POSTは409、scopeなし旧GETは400。通常対局INSERTも権限で拒否する。
 
 ### Postman
 
-Importする基本セットは、[API v2.0 collection](../api/postman/export/MJ-Stats%20API%20v2.0.postman_collection.json) と [local environment](../api/postman/export/MJ-Stats.local.postman_environment.json)。health → calculate → create → get matchesを確認できる。
-
-Step 1でcollection/YAMLのURLを `{{base_url}}` へ統一した。旧 [MJ-Stats collection](../api/postman/export/MJ-Stats.postman_collection.json) は `{{base_url}}` を使うが、履歴取得を含まない。Step 1でv2.0 collectionへme/PATCH/401ケースを追加し、全collectionの保護APIへBearerを付けた。
-
-v2.0ではhealth → me → 名前設定 → calculate/create/getの順で確認する。JWTなし・不正JWTの401も含む。Postman UIでの実行自体は今回未実施。access tokenはPostmanのローカル値として保持し、保存・exportする値には含めない。正常リクエストだけでなく、JWTなし・不正署名・期限切れ等を確認する。
+[Postman手順](../api/postman/README.md)からv2.0 collectionとlocal environmentを取り込む。health → me → 名前設定 → My Leagues → 選択したIDで参照・履歴。旧経路の停止と401/403/404も確認できる。
 
 ## Step 1以降の運用確認
 
@@ -299,12 +322,12 @@ Auth主体/セッション検証は公開しないschemaのSECURITY DEFINER関�
 | SUPABASE_URL | Go専用の信頼プロジェクトURL。issuerと固定JWKS URLを導く。Webのプロジェクトと一致 | Step 1 |
 | ALLOWED_ORIGINS | Goの許可originリスト。ローカルはhttp://localhost:3000。全origin許可で認証を通さない | Step 1 |
 | APP_ORIGIN | Web/Goが生成する確認後/招待URLの基準。HTTP Hostやbodyの外部URLを信用しない | Step 1〜2 |
-| INVITE_KEYS_JSON、INVITE_CURRENT_KEY_VERSION | Goだけが持つ鍵版と32byte以上のランダムHMAC鍵。期限内招待の旧鍵を保持。Git/ブラウザへ出さない | Step 2 |
+| INVITE_KEYS_JSON、INVITE_CURRENT_KEY_VERSION | Goだけが持つ鍵版と32byte以上のランダムHMAC鍵。期限内招待の旧鍵を保持。Git/ブラウザへ出さない | 2-5実装済み |
 | RATE_LIMIT_HASH_KEY | Go専用の32byte以上のランダム鍵。接続元の短期カウンタをhash化。平文IPをアプリ表へ保存しない | Step 2 |
 | Email確認・Site URL・許可URL・確認/回復テンプレート | Supabase側。ローカル受信先でtoken_hashのverifyOtpと登録/回復を区別して試験 | Step 1 |
 | JWT/セッションの現設定 | ES256と実claims、not_after・時間制限の有無。独自の定期ログアウトは追加しない。設定が設計と違えば受入前に解決する | Step 1 |
 
-上記は目標の設定名で、現在の.env/exampleが対応済みとは扱わない。実装PRでexampleに秘密でないplaceholderと用途を加える。DB接続情報やHMAC鍵を表示する確認コマンドをPRへ貼らない。鍵取得3秒・DB statement/lock待機5秒を初期の技術タイムアウトとして設計し、計測と故障注入で確認する。JWKS鍵変更時は旧新kidの検証、5分キャッシュと失効、必要な再起動を隔離環境で確認してから実環境へ適用する。
+招待のGo設定は `api/.env.example` に追加済み。試行制限の設定も `api/.env.example` に追加済み。DB接続情報やHMAC鍵を表示する確認コマンドをPRへ貼らない。鍵取得3秒・DB statement/lock待機5秒を初期の技術タイムアウトとして設計し、計測と故障注入で確認する。JWKS鍵変更時は旧新kidの検証、5分キャッシュと失効、必要な再起動を隔離環境で確認してから実環境へ適用する。
 
 ### 実設定の確認と公開前の条件
 

@@ -2,7 +2,7 @@
 
 この文書は「どの証拠があれば完成と言えるか」を定める。要求の正本は [requirements.md](requirements.md)、現行の挙動は [features-api.md](features-api.md)、設計条件は [architecture.md](architecture.md)、工程とDoDは [product-roadmap.md](product-roadmap.md) を参照する。
 
-Qケースの一覧は検証設計であり、全件を実行済みとは扱わない。設計整備時の読み取り調査に加え、Step 1作業ブランチで専用ローカルDB/Auth/メールとChromium、管理QAの実DB/Authと開発者のメール手動操作による実行結果を取得した。対象ケース・証跡・未実施は [Step 1記録](#step-1実装ブランチの検証記録2026-11-17) と [2-1記録](#step-2--2-1の検証記録2026-11-18) に分ける。将来Stepのケースを記載しても、その実装着手を承認したことにはならない。
+Qケースの一覧は検証設計であり、全件を実行済みとは扱わない。設計整備時の読み取り調査に加え、Step 1作業ブランチで専用ローカルDB/Auth/メールとChromium、管理QAの実DB/Authと開発者のメール手動操作による実行結果を取得した。対象ケース・証跡・未実施は [Step 1記録](#step-1実装ブランチの検証記録2026-11-17) 、[2-1記録](#step-2--2-1の検証記録2026-11-18)、[2-2記録](#step-2--2-2の検証記録) に分ける。将来Stepのケースを記載しても、その実装着手を承認したことにはならない。
 
 ## 現在の検証基盤
 
@@ -436,3 +436,113 @@ Q-25の今回実行した範囲：
 未実施・引継ぎ：Goのリーグ認可/履歴制限（Q-14/Q-17）、作成/招待/検索/参加API、ゲスト作成/本人紐付け、ルール/season/対局帰属・正確値・管理画面は今回のPASSに含まない。Webを変更していないためブラウザ/lint/buildは再実行していない。管理QAへの2-1適用と総合受入は後続区切り。Safari/iOS Safari/Android Chrome実機・前メジャー版、実Auth鍵ローテーション、本番SMTP/URL/バックアップ/復旧/運用条件、Postman UIの未確認は維持する。DB基盤の完成で旧全件履歴やクライアントpoint保存の負債が解消したとは扱わない。
 
 2-1完了後は停止し、2-2・別改善・PRマージ・Step 3・本番反映へ進まない。
+
+## Step 2 / 2-2の検証記録
+
+対象はルール・シーズン・対局帰属のDB基盤。関連はR-MATCH-02/03、R-SEASON-01、R-HISTORY-01、D-06/07/16/17。2-1はPR #9でマージ済み（起点 `bda0dad`）。上記2-1の実行結果は当時の記録。
+
+Q-16/Q-25のルール・シーズン部分は、専用ローカル内の使い捨てDBで合成・保存済み実コピーともPASS。全5本の空構築と増分の構造が一致し、旧全列、2-1の通常・legacy所属、旧ルールの不正条件・旧期間NULL/逆転、numeric値を保全。通常ルールの別IDによる新版作成、S/RのNULL・100点単位・範囲、ウマの順序/合計、旧条件UPDATE拒否、利用停止後の参照、UUID/開いた期間、逆転拒否、列権限と公開ロール拒否を実行した。2-1の72件の制約試験とowner競合試験もPASS。証跡は `.local/step2-2-rule-season-{synthetic,actual}.log`。
+
+| Q-16/Q-25ほかの実行範囲 | 期待値と結果 | 証跡（Git管理外） |
+| --- | --- | --- |
+| `npm run test:migrations`、同コマンドの `-- --snapshot .local/legacy-actual-20261117.json` | PASS。空DBへ全6本、旧コピーへ増分適用。列、制約、index、RLS、policy、triggerが一致。5参加者・1リーグ・5所属・1season・2rule・19対局・76結果の全旧列を保持。通常/legacyを含む2-1適用済み合成行も比較し、旧NULL・逆転期間・負のnumeric値・ID/参照を保全。2-1の72件とowner競合も再PASS | `.local/step2-2-migrations-{synthetic,actual}.log` |
+| explicit/NULL seasonと同一リーグ参照 | PASS。日本時間月初と対応するUTCが同じtimestamptz。期間内でもseason未指定はNULL。通常rule/season/記録者・結果の所属・対局が同一リーグなら成功し、混在は拒否。league_idがNULLの結果もapp対局へ参照できない | 上記2ログ |
+| 削除・rollback・段階的な権限 | PASS。参照中rule/season・結果付き対局と所属の削除を拒否。結果の途中失敗時に対局と先行結果をrollback。Goの旧保存/履歴はlegacyのみ、通常ruleを使った旧保存とapp書込みを拒否し、app行は不可視。公開ロールの読書き拒否 | 上記2ログ |
+| 再適用と履歴 | PASS。隔離試験でraw再適用を拒否し、履歴の欠落/本文差分/未知版を検知。専用ローカルへ2本だけ順に適用し、旧列の7表fingerprintが同値。実CLI再実行は適用0件、履歴は6版 | `.local/step2-2-local-{migration-up,migration-repeat,versions}.log`、`.local/step2-2-local-{before,after}.sha` |
+| Go単体・vet、実Auth付きGo回帰 | PASS。新DBで旧保存201、履歴200。保存行のmatch_dateとleague_idはNULL、JSONのmatch_dateは記録日時と一致、4結果を返す。JWT/セッション、並行me、名前、旧計算/保存rollback、D-41、localログアウト、Auth削除時のID・種別・owner/所属/結果参照保全を再確認 | `.local/step2-2-{go-test,go-vet,auth-regression}.log` |
+
+適用・書込みは専用ローカル `mj-stats-step1`（PostgreSQL 17.12）と内部の使い捨てDBだけ。元共有DB・既存管理QA・本番への適用、元コピーの再取得は未実施。既存.env・署名鍵・.localの既存証跡と退避設定を保持した。
+
+未実施はGoのリーグ認可・履歴制限、利用停止/保存の競合、指定シーズンの期間内保存検証、画面のタイムゾーン表示、ルールを読む計算と正確値保存、再送/取消/変更記録。上表のDB参照試験を各APIの合格に算入しない。Webと管理QAの受入は再実行していない。Safari・スマホ実機・実Auth鍵ローテーション、本番SMTP・復旧等の未確認も継続する。Step 2全体は途中。
+
+## Step 2 / 2-3の検証記録
+
+2-2のコミットを保持し、同じブランチ `feat/step-2-match-attribution` と [Draft PR #10](https://github.com/kosuke978/mj-stats/pull/10) で2-3を実装した。関連はD-11/D-12、D-41〜D-43、R-LEAGUE-01とR-HISTORY-01。Step 2全体は途中。
+
+| 実行した範囲 | 実測結果 | Git管理外の証跡 |
+| --- | --- | --- |
+| Q-14/Q-16/Q-26の参照 | 実Authの2利用者、複数リーグで6参照APIとリーグごとのroleを確認。未所属、left/removed/legacy、存在しないUUIDは403。ゲストは参加者候補。ruleの利用可否、UUID/NULLシーズン、子のスコープ、別リーグ・一覧・filterのcursor拒否を確認 | `.local/step2-3-reference-auth.log`、`.local/step2-3-cutover-auth.log` |
+| Q-14/Q-16/Q-22/Q-26の履歴 | 通常行のみ、通算/指定/未指定、空、同時刻のID順とNULL記録日時、別リーグseasonの404、退会状態の同じJWTでの再検証、別本人/条件のcursorと変換できない日時の400を確認。改名しても原IDと保存済み素点・順位・数値pointが一致 | `.local/step2-3-cutover-auth.log` |
+| Q-14/Q-17の旧経路 | 旧GETはleague_id必須で認可共通。旧POST計算・保存は409でusers/matches/match_resultsの照合値が不変。今回のQ-17は停止と認可境界のみ | 同上 |
+| Q-25のmigrationと権限 | 空DBへ全7本。合成・保存済み実コピーで増分と構造一致、旧全列/ID/参照を保全。実コピーは5参加者・1リーグ・5所属・1season・2rule・19対局・76結果。2-1の72件とowner競合、2-2の複合参照を再確認。Goロールはscopeなしで対局・結果0件、scopeありでも同じリーグのapp行だけ、commit後はscopeが消える。旧/通常INSERTと公開ロールを拒否 | `.local/step2-3-migrations-{synthetic,actual}.log` |
+| 専用ローカルの切替 | 旧Go停止を確認→増分1本→対応Go/Web起動。適用前後で7表の全行照合値一致、再適用は0件。隔離DBのraw再適用と履歴不整合を検知 | `.local/step2-3-local-{before,after}.sha`、`.local/step2-3-migration-{up,repeat}.log` |
+| Step 1回帰・Go | `go test ./...`、`go vet ./...`、実DB/Authの `TestStep1RealDBAuth` がPASS。6保護ルートで未認証・13種類の不正Auth拒否、名前未設定、並行me、D-41の権限とロック、localログアウト、Auth解除後の原ID・所属・参照保持を確認 | `.local/step2-3-go-{test,vet}.log`、`.local/step2-3-cutover-auth.log` |
+| WebとQ-26 | lint・型検査・本番build・単体3件がPASS。専用ローカルの本番ビルドとChromiumで9件PASS、メール期限切れ専用1件SKIP。最終Goで履歴の1件を再実行してPASS。390pxの直URL→ログイン復帰、SSR/no-store、シーズン・履歴ページング、リーグ/同ブラウザの本人切替、空・拒否・取得失敗からの再試行・停止表示。登録・更新Cookie・回復・ログアウト・プロセス再起動も回帰 | `.local/step2-3-web-{lint,types,build,unit}.log`、`.local/step2-3-browser-final.log`、`.local/step2-3-browser-final-go.log` |
+| Postman | JSON/YAML 25ファイルの構文とv2.0の7 GETテンプレートを確認。Postman UIの手動実行は未実施 | Git差分と上記Go/ブラウザのHTTP検証 |
+
+適用・書込みは専用ローカル `mj-stats-step1` とその隔離DB。元共有DB・本番・2-1未適用の既存管理QAは変更せず、元コピーも再取得していない。既存.env・署名鍵・既存証跡と退避設定は保持した。
+
+2-4以降は作成・検索・番号解決・招待・参加。Step 3にはリーグ付き計算・保存、ゲスト/本人対応、正確値のn/d、操作ID/再送、結果数・合計等の制約とロック、利用停止rule・指定シーズンの期間検証を引き継ぐ。これらが揃うまでは通常INSERTを有効化しない。旧POSTの201・プレビューは意図的に停止したためPASSに含めない。管理QA総合受入、Safari/スマホ実機・前メジャー版、実Auth鍵ローテーション、本番SMTP/復旧等の未確認は継続する。
+
+## Step 2 / 2-4の検証記録
+
+Step 2内のリーグ作成・初期owner・初期ルール。D-31/D-35/D-43、R-LEAGUE-01の作成部分。同じブランチとDraft PR #10で2-2〜2-3を保持して実装した。
+
+| 実行範囲 | 結果 | 証跡（Git管理外） |
+| --- | --- | --- |
+| Q-14 作成と参照 | 実Authで所属なしの名前設定済み本人が201。リーグとactive/registered/owner所属、初期ルール、イベントが各1件、非掲載、season 0件。GET一覧・詳細・rulesに反映し、別利用者の閲覧は403。同じ操作IDでも別本人は独立 | `.local/step2-4-auth.log` |
+| Q-26 入力・再送 | 新規201、同内容200、同じ操作IDで別内容409。8並行は201×1と200×7で同じID。commit後にHTTP応答を切断しても再送200。未認証401、本人未作成/名前未設定403、範囲・UUID・未知/重複項目の不正は400 | 同上 |
+| Q-25 実DBでの衝突と原子性 | 既存番号との衝突後に先頭ゼロ付きの別番号で成功。全候補が衝突する場合は初回＋5回で503、行数不変。最後のイベントINSERTだけを失敗させて4種類の行が残らないこと、同じ操作IDで復旧後に1組だけ作成できることを確認 | 同上 |
+| Q-25 migration・権限と保全 | 全8本の空DB適用、合成・保存済み実コピー増分、そのスキーマ一致を確認。旧7表の値・ID・参照を保全。イベントの本人scope、別リーグrule拒否、操作一意性、追記専用と公開ロール拒否、2-1〜2-3の境界がPASS。専用ローカルの7表照合値は適用前後で一致、再適用0件 | `.local/step2-4-migrations-{synthetic,actual}.log`、`.local/step2-4-local-*.log` と `.sha` |
+| Go・既存回帰 | `go test ./...`、`go vet ./...`、実DB/Authの `TestStep1RealDBAuth` がPASS。認証・本人情報・ログアウト・Auth解除、2-3の参照/履歴と旧計算・保存の409を再確認 | `.local/step2-4-go-{test,vet}.log`、`.local/step2-4-auth.log` |
+| API資料とPostman | JSON/YAML 26ファイルの構文と作成URL・メソッド・JSON・操作ID変数の一致、ローカル文書リンク、差分検査を確認 | Git差分 |
+
+適用・書込みは専用ローカル `mj-stats-step1` と隔離DBのみ。元共有DB・既存管理QA・本番は未適用。Webの作成画面・ブラウザ試験、Postman UI、管理QA総合受入は未実施。Safari/スマホ実機、実Auth鍵ローテーション、本番SMTP・復旧などの未確認事項は継続する。招待は2-5、参加・再参加・検索・番号解決は2-6、Web作成導線は2-7。対局の通常INSERTと旧計算・保存の停止を維持する。
+
+## Step 2 / 2-5の検証記録
+
+D-08/D-33/D-36、R-LEAGUE-01の招待の発行・失効・再発行。2-2〜2-4に続き、同じブランチ `feat/step-2-match-attribution` とDraft PR #10で実装した。Step 2全体は途中。
+
+| 実行範囲 | 結果 | 証跡（Git管理外） |
+| --- | --- | --- |
+| Q-14 運営権限 | 実Authの2本人と複数リーグでowner/adminの運営権限を確認。未認証は401、memberは403、非所属・left/removed/legacy・存在しないリーグは403、運営者が別リーグの招待IDを指定しても404。拒否時に招待・操作記録は不変。試験中の招待操作で所属は不変 | `.local/step2-5-auth.log` |
+| Q-26 招待・応答 | 168時間、期限ちょうどで無効、空・期限切れ・失効後の現行は200でNULL。期限切れの旧招待も再発行時に失効。APP_ORIGIN、no-store、表示形式、保存hashを照合。鍵版切替後は旧版保持で同じコードを再表示し、新規発行は新版。必要な旧鍵がない場合は503。版や操作IDの不正は400 | 同上、`.local/step2-5-go-test.log` |
+| Q-26 再送・競合 | 逐次発行の再送は200で元ID。6並行発行は201×1、200×5で招待と発行イベントが各1件追加。4並行失効と逐次再送は200で版更新・失効イベント各1回。版違い・失効済みの別操作・操作IDの内容違いを異なる409で拒否。別リーグ同一操作IDも409。期限切れや失効済みの発行再送は元の招待の状態とメタデータを返し、資格情報を省略する。並行再発行・失効後の未失効は1件 | `.local/step2-5-auth.log` |
+| Q-25 原子性・権限 | 発行・失効の最後のイベントINSERTを故障注入で拒否し、招待・イベントの前後一致を確認。DBで有効登録運営者の本人/リーグscope、期限・1件制約、同リーグイベントFK、イベントpayload空、専用ロールの資格情報列UPDATE・DELETE拒否、公開ロールの拒否を確認 | 同上、`.local/step2-5-migrations-{synthetic,actual}.log` |
+| Q-25 migration・旧値 | 全9版の空DB適用、合成と保存済み実コピーの増分と構造一致。旧7表（5参加者・19対局・76結果を含む）の値・ID・参照と2-4作成イベントの旧列を保全。専用ローカルの前後照合値が一致、CLI再適用0件。隔離DBでraw再適用・履歴不整合の拒否を確認 | 上記migrationログ、`.local/step2-5-local-*.log` と `.sha` |
+| Goと既存回帰 | `go test ./...`、`go vet ./...`、実DB/Authの `TestStep1RealDBAuth` がPASS。認証・本人情報・localログアウト・Auth解除、リーグ作成と再送、所属限定参照・履歴、旧計算・保存の409を再確認。migration試験で通常対局INSERTの拒否、2-1のowner競合・2-2の複合参照を再確認 | `.local/step2-5-go-{test,vet}.log`、`.local/step2-5-auth.log`、上記migrationログ |
+| Postman | 3件の招待APIについてJSON/YAMLのパス、メソッド、入力、環境変数を照合。招待資格情報のサンプルなし。Postman UIは未実施 | `.local/step2-5-postman.log` |
+
+適用・書込みは専用ローカル `mj-stats-step1` と隔離DB。元共有DB・2-1以降未適用の既存管理QA・本番には適用していない。既存の接続設定・保存コピー・Auth署名鍵は保持した。参加・再参加・照合・試行制限、検索・番号解決は2-6、Web接続とブラウザでの招待確認は2-7。管理QA総合受入、Safari/スマホ実機、実Auth鍵ローテーション、本番配送・復旧の未確認は継続する。
+
+## Step 2 / 2-6と2-7の検証記録
+
+実行先は専用ローカル `mj-stats-step1` とその隔離DB。元共有DB・管理QA・本番には適用していない。実コピーは保存済みのスナップショットを使用した。既存の接続設定とAuth署名鍵を保持し、招待・試行制限の鍵はローカルGoプロセス用に一時生成した。
+
+| 確認 | 実行サブケースと結果 | 証跡（Git管理外） |
+| --- | --- | --- |
+| 2-6、Q-14/Q-26 | 実Authで掲載のみのNFKC・小文字・%/_の文字一致、同名ページング、検索条件・本人違いのcursor拒否、非掲載の番号解決、プレビューの最小応答と所属不変を確認。共通招待で新規2人が参加し、有効なowner/adminは元role、脱退した旧adminと除名済みは同じ参加者IDでmemberになった | `.local/step2-6-auth.log` |
+| 2-6、Q-14/Q-26 | 4並行再送で参加イベント1件。操作IDのリーグ・コード違いは409。再送で除名済み所属は復活しない。別リーグのコード、期限切れ、失効は404。再発行・失効それぞれと参加を並行させ、先に招待を失効した場合は所属不変、先に参加した場合は所属を保持した | 同上 |
+| 2-6、Q-25/Q-26 | 2つのGoハンドラでプレビュー・参加の失敗分を共有計数し、検索・本人/リーグ・接続元の上限で429とRetry-After。転送ヘッダーを変えても未信頼の接続元は変わらない。DBで古いカウンタ削除、公開ロールと専用ロールの直接アクセス拒否、本人の操作記録と同一リーグ招待FKを確認 | `.local/step2-6-auth.log`、`.local/step2-6-migrations-{synthetic,actual}.log` |
+| 2-7、Q-14/Q-19/Q-26 | 本番ビルドと実Go/DB/Authで、作成→招待発行→別ユーザーの明示参加→限定履歴。リンク・非掲載番号・掲載名の3入口、プレビュー時の所属不変、拒否・空、再参加、再発行/失効後の旧コード拒否と既存所属・保存済み結果の保持を確認。初回参加が確定した後の応答を遮断し、同じ操作IDで再送、イベント1件を確認 | `.local/step2-7-browser.log`、`.local/step2-7-browser.json` |
+| 2-7、Q-09/Q-19/Q-21/Q-26 | ログイン・名前設定・メール確認から参加パスに復帰。クエリ・SSR応答へコードを含めず、開き直しと手入力を確認。Chromiumの参加画面は360px・390px。既存の認証画面の360/390/768/1280px、200%文字・キーボード、履歴・本人切替・更新・回復・localログアウト・ブラウザ再起動も再実行 | 同上 |
+| ビルド・契約 | `go test ./...`、`go vet ./...`、実DB/Authの `TestStep1RealDBAuth`、Web lint・型検査・本番build・単体4件、Chromium 11件がPASS。Postman JSON/YAML 33件、新しい4 APIのURL・入力の一致を確認 | `.local/step2-6-go-{test,vet}.log`、`.local/step2-7-web-{lint,types,build,unit}.log`、`.local/step2-6-postman.log` |
+
+## Step 2の総合受入
+
+[ロードマップのStep 2完了条件](product-roadmap.md#step-25の実装範囲と完了条件)との照合。以下は専用ローカルでの実装・受入判定で、開発者のStep完了承認とPRマージは保留。
+
+| 完了条件 | 判定と対応する証跡 |
+| --- | --- |
+| Q-14 作成・参加・参照・拒否 | PASS。2-4の初期owner・初期ルール・一括作成、2-5の運営者の招待管理、2-6の検索/番号/招待・参加/再参加、2-7の3入口を実Authで確認。2-3からの非所属・終了済み・legacy拒否とリーグごとのroleを再確認。証跡は2-3〜2-7の実Auth・ブラウザ記録 |
+| Q-16 版・型・同一リーグ参照 | PASS（Step 2範囲）。DB由来のルール版と利用可否、UUIDシーズン・NULL、リーグ/所属/対局/結果の複合参照、別リーグ拒否を確認。2-1〜2-3の証跡に加え最終migrationとGo実Authで回帰 |
+| Q-17 認可・旧経路停止 | PASS（認可・停止）。旧GETはleague_id必須、非所属は403、通常履歴は所属リーグのapp行のみ。旧POST計算・保存は409で副作用なく、旧・通常対局INSERTをDBで拒否。新しい保存の成功はStep 3 |
+| Q-25 7コア表と移行・権限 | PASS。空DBへ10本。合成・保存済み実コピーの増分、旧7表の値・ID・参照（実コピーは5参加者・19対局・76結果を含む）、専用ローカル前後の旧7表・作成/招待の照合値が一致。再適用0件、raw再適用・履歴不整合の拒否、2-1の72件とowner競合、2-2からの帰属、公開ロール拒否。証跡は `.local/step2-6-migrations-{synthetic,actual}.log` と `.local/step2-6-local-*` |
+| Q-19/Q-26 最小Web接続・API契約とStep 1回帰 | PASS（実行範囲）。上記の実Auth・実ブラウザ、Web検査、Postman契約。ホーム・共通ナビ全体はStep 4、掲載切替・除名管理はStep 5 |
+
+管理QAへの増分と総合受入、Postman UI、Safari・スマホ実機と対象前メジャー版、実Auth鍵ローテーション、本番メール・監視・バックアップ/復旧は未実施。通常のChromiumスイートでは、Authの設定変更を伴う短期限メール専用ケースをskipした。実時間OTPの既存証跡はStep 1の記録に残す。
+
+Step 3では、対象リーグ所属のGo認可と共通ロックに、ゲスト/本人対応、ルール・シーズン・日時と参加者の書込み時検証を接続する。旧numericを保全して正確値n/dを移行し、4結果と合計の制約、操作ID・再送を揃えてから通常INSERTを有効にする。保存済みの旧値を再計算せず、旧全件履歴・未認可書込みを再開しない。
+
+## Step 2マージ前の招待修正の受入
+
+対象はD-36、F-04、Q-14/Q-19/Q-26。同じタブでログイン・登録確認・初回表示名設定をまたぐ招待コードの復元と、APIの招待エラーを再検証した。この記録は2-7時点のコード復帰と招待エラーの記述を更新する。
+
+| 確認 | 結果・証跡 |
+| --- | --- |
+| 同じタブでリンクを一度だけ開いて参加 | PASS。未ログインからログインと表示名設定を経て、コードの再入力・リンクの開き直しなしでプレビューと明示参加が成立した。プレビュー前・参加送信前の所属は不変。クエリやSSRにコードが含まれないことも確認。 `.local/step2-invite-fix-browser.{log,json}` |
+| 登録・メール確認と別タブ | PASS。同じタブで登録・実メール確認・初回表示名設定を経て元のコードで照合へ進めた。別タブではコード欄は空で開き直し・手入力を案内。 `.local/step2-invite-fix-browser.{log,json}` |
+| 破棄と招待エラー | PASS。参加完了、期限切れ・形式不正、15分の保持期限、ログアウト、本人切替で復元用の保持内容が消えることを確認。開いた後に招待を期限切れにして404 `INVALID_INVITE`、形式不正で400 `INVALID_INPUT`。実DB/Authではプレビューと参加の両方、正しい形式の不一致、429・Retry-After、所属拒否と既存参加再送も確認。 `.local/step2-invite-fix-browser.{log,json}`、`.local/step2-invite-fix-auth.log` |
+| 回帰・検査 | PASS。Go全テスト・vet、実DB/Authの `TestStep1RealDBAuth`、Web lint・型検査・本番build・単体4件。Chromium 11件PASS、短期限メール専用1件SKIP。 `.local/step2-invite-fix-*.log` |
+
+専用ローカル `mj-stats-step1` の既存migrationを使用した。今回のmigration追加はなく、元共有DB・既存管理QA・本番には適用していない。

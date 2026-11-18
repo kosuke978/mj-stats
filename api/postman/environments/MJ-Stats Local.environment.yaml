@@ -7,3 +7,25 @@ values:
     value: ""
     enabled: true
     type: secret
+  - key: league_id
+    value: ""
+    enabled: true
+  - key: client_request_id
+    value: ""
+    enabled: true
+  - key: invite_id
+    value: ""
+    enabled: true
+  - key: invite_version
+    value: ""
+    enabled: true
+  - key: search_q
+    value: ""
+    enabled: true
+  - key: group_number
+    value: ""
+    enabled: true
+  - key: invite_code
+    value: ""
+    enabled: true
+    type: secret

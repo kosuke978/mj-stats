@@ -4,6 +4,7 @@ import { clientAPI } from '@/lib/auth/client-api'
 import { type Viewer } from '@/lib/auth/api'
 import { normalizeName } from '@/lib/auth/name'
 import { safeReturnTo } from '@/lib/auth/paths'
+import { discardInviteOnLogout } from '@/lib/auth/pending-invite'
 import { browserSupabase } from '@/lib/supabase/browser'
 import { useViewer } from './viewer-provider'
 import { Button } from '@/components/ui/button'
@@ -60,6 +61,7 @@ export function ProfileForm({
         setMessage('ログアウトを完了できませんでした。再試行してください。')
         return
       }
+      discardInviteOnLogout()
       window.location.replace('/login')
     } catch {
       setMessage('ログアウトを完了できませんでした。再試行してください。')

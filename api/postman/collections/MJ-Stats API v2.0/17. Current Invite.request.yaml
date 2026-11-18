@@ -1,0 +1,7 @@
+$kind: http-request
+description: "owner/admin向け。200。未発行・期限切れ・失効時はinviteがnull。"
+url: "{{base_url}}/api/leagues/{{league_id}}/invites/current"
+method: GET
+headers:
+  Authorization: "Bearer {{access_token}}"
+order: 18000

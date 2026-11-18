@@ -73,7 +73,7 @@ func TestStep1RealDBAuth(t *testing.T) {
 	if e != nil {
 		t.Fatal(e)
 	}
-	api := httptest.NewServer(router(db, verifier, []string{"http://localhost:3000"}))
+	api := httptest.NewServer(router(db, verifier, []string{"http://localhost:3000"}, nil, nil, nil))
 	defer api.Close()
 	ctx, cancel := context.WithTimeout(context.Background(), 90*time.Second)
 	defer cancel()
@@ -145,7 +145,7 @@ func TestStep1RealDBAuth(t *testing.T) {
 		return value
 	}
 	calc := `{"players":[{"player_id":"p1","raw_score":40000},{"player_id":"p2","raw_score":30000},{"player_id":"p3","raw_score":20000},{"player_id":"p4","raw_score":10000}]}`
-	paths := []struct{ method, path, body string }{{"GET", "/api/users/me", ""}, {"POST", "/api/matches/calculate", calc}, {"POST", "/api/matches", `{"rule_id":"99999999-9999-9999-9999-999999999999","season_id":null,"results":[{"player_id":"11111111-1111-1111-1111-111111111111","raw_score":40000,"point":50,"rank":1},{"player_id":"22222222-2222-2222-2222-222222222222","raw_score":30000,"point":10,"rank":2},{"player_id":"33333333-3333-3333-3333-333333333333","raw_score":20000,"point":-20,"rank":3},{"player_id":"44444444-4444-4444-4444-444444444444","raw_score":10000,"point":-40,"rank":4}]}`}, {"GET", "/api/matches", ""}}
+	paths := []struct{ method, path, body string }{{"GET", "/api/users/me", ""}, {"POST", "/api/matches/calculate", calc}, {"POST", "/api/matches", `{"rule_id":"99999999-9999-9999-9999-999999999999","season_id":null,"results":[{"player_id":"11111111-1111-1111-1111-111111111111","raw_score":40000,"point":50,"rank":1},{"player_id":"22222222-2222-2222-2222-222222222222","raw_score":30000,"point":10,"rank":2},{"player_id":"33333333-3333-3333-3333-333333333333","raw_score":20000,"point":-20,"rank":3},{"player_id":"44444444-4444-4444-4444-444444444444","raw_score":10000,"point":-40,"rank":4}]}`}, {"GET", "/api/matches", ""}, {"GET", "/api/leagues", ""}, {"GET", "/api/leagues/00000000-0000-0000-0000-000000000001/matches", ""}}
 	before := fingerprint()
 	for _, p := range paths {
 		if code, _ := call(p.method, p.path, "", p.body); code != 401 {
@@ -158,7 +158,7 @@ func TestStep1RealDBAuth(t *testing.T) {
 	if before != fingerprint() {
 		t.Fatal("Q-06 database changed")
 	}
-	t.Log("Q-06 PASS: 4 unauthenticated APIs=401; health=200; database unchanged")
+	t.Log("Q-06 PASS: 6 unauthenticated APIs=401; health=200; database unchanged")
 
 	email, password, uid := create()
 	a := login(email, password)
@@ -202,7 +202,7 @@ func TestStep1RealDBAuth(t *testing.T) {
 	if before != fingerprint() {
 		t.Fatal("Q-07 database changed")
 	}
-	t.Logf("Q-07 PASS: %d invalid JWT/subject/session fixtures x 4 APIs; database unchanged", len(invalid))
+	t.Logf("Q-07 PASS: %d invalid JWT/subject/session fixtures x 6 APIs; database unchanged", len(invalid))
 
 	// Exercise Auth metadata states with a real session and real Admin API.
 	var aClaims auth.Claims
@@ -247,6 +247,11 @@ func TestStep1RealDBAuth(t *testing.T) {
 	}
 	t.Log("Q-07/Q-10 PASS: expired session, banned subject and 5-second Auth lock timeout rejected without profile creation")
 
+	const creationProbe = `{"name":"未設定の拒否確認","client_request_id":"3a000000-0000-4000-8000-000000000001"}`
+	if status, body := call("POST", "/api/leagues", a.Access, creationProbe); status != 403 || body["error"].(map[string]any)["code"] != "PROFILE_REQUIRED" {
+		t.Fatal("league creation accepted with no participant")
+	}
+
 	// Concurrent first access must converge without overwriting a name.
 	var wg sync.WaitGroup
 	ids := make(chan string, 12)
@@ -289,6 +294,9 @@ func TestStep1RealDBAuth(t *testing.T) {
 			t.Fatal("incomplete profile not denied")
 		}
 	}
+	if status, body := call("POST", "/api/leagues", a.Access, creationProbe); status != 403 || body["error"].(map[string]any)["code"] != "PROFILE_INCOMPLETE" {
+		t.Fatal("league creation accepted before name setup")
+	}
 	for _, body := range []string{`{"name":""}`, `{"name":"\n名前"}`, `{"name":"x","id":"other"}`, `{"name":"a","name":"b"}`, `{"name":null}`} {
 		if code, _ := call("PATCH", "/api/users/me", a.Access, body); code != 400 {
 			t.Fatal("invalid name/body accepted")
@@ -320,42 +328,55 @@ func TestStep1RealDBAuth(t *testing.T) {
 		t.Fatal("same name must preserve separate identities")
 	}
 	t.Log("Q-08 PASS: two real Auth users may choose the same name and keep distinct participant IDs")
+	t.Run("LeagueCreation", func(t *testing.T) {
+		testLeagueCreation(t, ctx, db, admin, verifier, call, a.Access, other.Access, participant, sameName["id"].(string))
+	})
+	t.Run("LeagueInvites", func(t *testing.T) {
+		testLeagueInvites(t, ctx, db, admin, verifier, a.Access, other.Access, participant, sameName["id"].(string))
+	})
+	t.Run("LeagueParticipation", func(t *testing.T) {
+		thirdEmail, thirdPassword, thirdAuthID := create()
+		third := login(thirdEmail, thirdPassword)
+		verifyStatus(t, call, "GET", "/api/users/me", third.Access, 200, "")
+		apiStatus, body := call("PATCH", "/api/users/me", third.Access, `{"name":"共通招待の参加者"}`)
+		thirdParticipant, ok := body["id"].(string)
+		if apiStatus != 200 || !ok {
+			t.Fatal("third participant profile")
+		}
+		t.Cleanup(func() {
+			if _, err := admin.Exec("DELETE FROM public.users WHERE id=$1", thirdParticipant); err != nil {
+				t.Error("cleanup shared invite participant")
+			}
+			if code, _ := authCall("DELETE", "/admin/users/"+thirdAuthID, status["SERVICE_ROLE_KEY"], nil); code != 200 {
+				t.Error("cleanup shared invite Auth user")
+			}
+		})
+		testLeagueParticipation(t, ctx, db, admin, verifier, a.Access, other.Access, third.Access, participant, sameName["id"].(string), thirdParticipant)
+	})
+	t.Run("LeagueReferences", func(t *testing.T) {
+		testLeagueReferences(t, ctx, admin, call, a.Access, other.Access, participant, sameName["id"].(string))
+	})
 
-	// The legacy request and point format remain unchanged; exercise tx rollback.
+	t.Run("LeagueHistory", func(t *testing.T) {
+		testLeagueHistory(t, ctx, admin, call, a.Access, other.Access, participant, sameName["id"].(string))
+	})
+
+	before = fingerprint()
+	for _, p := range paths[1:3] {
+		code, body := call(p.method, p.path, a.Access, p.body)
+		if code != 409 || body["error"].(map[string]any)["code"] != "RECORDING_UNAVAILABLE" {
+			t.Fatal("old recording route is still active")
+		}
+	}
+	verifyStatus(t, call, "GET", "/api/matches", a.Access, 400, "INVALID_INPUT")
+	if before != fingerprint() {
+		t.Fatal("stopped recording route changed the database")
+	}
 	seed, _ := os.ReadFile("db/seed.sql")
 	if _, err = admin.ExecContext(ctx, string(seed)); err != nil {
 		t.Fatal("isolated legacy fixture")
 	}
-	req, _ := http.NewRequestWithContext(ctx, "POST", api.URL+"/api/matches/calculate", strings.NewReader(calc))
-	req.Header.Set("Authorization", "Bearer "+a.Access)
-	req.Header.Set("Content-Type", "application/json")
-	res, err := httpClient.Do(req)
-	if err != nil {
-		t.Fatal(err)
-	}
-	var points []struct {
-		Point float64 `json:"point"`
-	}
-	_ = json.NewDecoder(res.Body).Decode(&points)
-	res.Body.Close()
-	if res.StatusCode != 200 || len(points) != 4 || points[0].Point != 50 || points[3].Point != -40 {
-		t.Fatal("Q-01 regression")
-	}
-	before = fingerprint()
-	broken := strings.Replace(paths[2].body, "33333333-3333-3333-3333-333333333333", "ffffffff-ffff-4fff-8fff-ffffffffffff", 1)
-	if code, _ := call("POST", "/api/matches", a.Access, broken); code != 503 {
-		t.Fatal("rollback failure code")
-	}
-	if before != fingerprint() {
-		t.Fatal("partial match saved")
-	}
-	if code, _ := call("POST", "/api/matches", a.Access, paths[2].body); code != 201 {
-		t.Fatalf("legacy save=%d", code)
-	}
-	if code, _ := call("GET", "/api/matches", a.Access, ""); code != 200 {
-		t.Fatal("history")
-	}
-	t.Log("Q-01/Q-05/Q-13 Step 1 regression PASS: legacy calculation/save/history and rollback")
+	t.Log("Q-14/Q-17 cutover PASS: old calculation/save refuse with no side effects; unscoped history closed")
 
 	// Privilege assertions must use real sessions for the API role, never SET ROLE as owner.
 	for _, query := range []string{`SELECT * FROM auth.users LIMIT 1`, `UPDATE auth.users SET id=id`, `DELETE FROM public.users WHERE false`} {
@@ -480,24 +501,6 @@ func TestStep1RealDBAuth(t *testing.T) {
 	if _, err = admin.ExecContext(ctx, `INSERT INTO public.match_results(match_id,user_id,raw_score,final_point,rank) SELECT $1,v.id::uuid,25000,0,v.rank FROM (VALUES ('11111111-1111-1111-1111-111111111111',2),('22222222-2222-2222-2222-222222222222',3),('33333333-3333-3333-3333-333333333333',4)) v(id,rank)`, match); err != nil {
 		t.Fatal("four result fixture")
 	}
-	if code, _ := call("PATCH", "/api/users/me", b.Access, `{"name":"履歴の現在名"}`); code != 200 {
-		t.Fatal("history rename")
-	}
-	code, history := call("GET", "/api/matches", b.Access, "")
-	visible := false
-	if code == 200 {
-		for _, m := range history["matches"].([]any) {
-			for _, r := range m.(map[string]any)["results"].([]any) {
-				if r.(map[string]any)["user_id"] == "履歴の現在名" {
-					visible = true
-				}
-			}
-		}
-	}
-	if !visible {
-		t.Fatal("current name not returned in history")
-	}
-	t.Log("Q-08/Q-15 Step 1 PASS: name PATCH appears in legacy history while participant/result references stay unchanged")
 	// The same lock boundary must order a concurrent hard Auth deletion.
 	held, err := db.BeginTx(ctx, nil)
 	if err != nil {
@@ -554,10 +557,10 @@ func TestStep1RealDBAuth(t *testing.T) {
 	// Confirm failures remain service errors with no SQL or credential disclosure.
 	adminDown, _ := sql.Open("postgres", "postgres://unused:unused@127.0.0.1:1/postgres?sslmode=disable&connect_timeout=1")
 	defer adminDown.Close()
-	brokenAPI := httptest.NewServer(router(adminDown, verifier, []string{"http://localhost:3000"}))
+	brokenAPI := httptest.NewServer(router(adminDown, verifier, []string{"http://localhost:3000"}, nil, nil, nil))
 	defer brokenAPI.Close()
-	req, _ = http.NewRequestWithContext(ctx, "GET", brokenAPI.URL+"/api/health", nil)
-	res, err = httpClient.Do(req)
+	req, _ := http.NewRequestWithContext(ctx, "GET", brokenAPI.URL+"/api/health", nil)
+	res, err := httpClient.Do(req)
 	if err != nil {
 		t.Fatal(err)
 	}

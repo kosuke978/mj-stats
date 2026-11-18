@@ -94,7 +94,7 @@ func Reject(c *gin.Context, err error) {
 // Every write transaction must take Auth locks before app row locks/changes.
 func (g *Guard) BeginWrite(c *gin.Context) (*sql.Tx, context.Context, context.CancelFunc, error) {
 	ctx, cancel := context.WithTimeout(c.Request.Context(), 5*time.Second)
-	tx, err := g.DB.BeginTx(ctx, nil)
+	tx, err := g.DB.BeginTx(ctx, &sql.TxOptions{Isolation: sql.LevelReadCommitted})
 	if err == nil {
 		_, err = tx.ExecContext(ctx, `SET LOCAL statement_timeout='5s'; SET LOCAL lock_timeout='5s'`)
 	}

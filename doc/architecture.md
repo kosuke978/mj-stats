@@ -5,7 +5,7 @@
 | 層 | 実装と主な責務 | 根拠 |
 | --- | --- | --- |
 | Web | Next.js 16.2.3 / React 19.2.4 / TypeScript。ログイン、対局入力、履歴表示 | [package.json](../web/package.json)、[app](../web/src/app) |
-| UI・入力 | Tailwind CSS 4、Base UIを使ったUI部品、React Hook Form、Zod | [UI部品](../web/src/components/ui)、[MatchInputForm](../web/src/components/match/MatchInputForm.tsx) |
+| UI・入力 | Tailwind CSS 4、Base UIを使ったUI部品、React Hook Form、Zod | [UI部品](../web/src/components/ui)、[履歴カード](../web/src/components/match-card.tsx) |
 | Auth | Supabase Auth。ブラウザのメール・パスワードログインとCookieベースのWebセッション | [login/page.tsx](../web/src/app/login/page.tsx)、[proxy.ts](../web/src/proxy.ts) |
 | API | Go。`go.mod` はGo 1.26.2。Gin、`database/sql`、`lib/pq` を使用 | [go.mod](../api/go.mod)、[main.go](../api/main.go) |
 | DB | `DATABASE_URL` でPostgreSQLへ直接接続。Supabase上のDBを想定 | [database.go](../api/db/database.go)、[.env.example](../api/.env.example) |
@@ -64,6 +64,56 @@ Step 1ブランチではGoに共通JWT/主体/セッション検証を追加し�
 owner制約関数は固定search_path・完全修飾SQL・postgres所有のSECURITY DEFINERとし、RLSの見え方に依存せずリーグ行→owner所属行をロックして最終状態を確認する。関数の直接EXECUTEはPUBLIC/公開3ロール/Go/validatorから剥奪する。[PostgreSQLの遅延制約trigger](https://www.postgresql.org/docs/17/sql-createtrigger.html)に従い作成/移譲を同一txで行い、部分UNIQUEに合わせ旧owner降格→新owner設定→owner_id更新の順に扱う。競合時のdeadlock/serialization失敗もtx全体をrollbackする。版の照合/加算、本人同意、認証・業務認可は後続Go実装の責務。
 
 Auth解除でもregisteredの種別・owner/所属参照を維持する。D-41/D-42を変更せず、旧参加者ID・名前・role・日時・対局参照・numeric値を保全する。新しい補助表やrule/season/対局帰属列は追加しない。DBロールのpolicyはサービス境界であり、利用者ごとのリーグ認可の完成を意味しない。旧全件履歴・旧保存契約は継続中。
+
+## Step 2 / 2-2のルール・シーズン基盤
+
+`20261118001000_rule_season_foundation.sql` を2-1の後に適用する。既存ルールの保存済み条件・帰属を保ち、`legacy_unverified`・利用不可・版1で区別する。通常ルールは `exact_v1`、リーグ必須、S/Rは正の100点単位でR≧S、ウマは整数の降順・合計0。Goロールの作成は番号付きリーグ・利用可に限定し、更新権限は利用可否・版だけに付与する。条件変更は別IDを発行し、利用停止後も参照できる。旧条件の保全と利用可否変更の排他は別で、保存との排他は後続のGo保存で実装する。
+
+シーズンはUUID・正数版と既存のリーグFKを使い、通常Goロールの作成・参照は番号付きリーグに限定する。開始・終了は日本時間の暦日であり、NULLは開いた境界を表す。開始≤終了のCHECKは既存の不明・逆転値を改変せずに適用するため `NOT VALID` で追加し、以降のINSERT/UPDATEに効く。Goには期間のUPDATE権限を付与しない。複合参照用の `(league_id,id)` UNIQUEを両表に追加する。
+
+## Step 2 / 2-2の対局・結果の帰属
+
+`20261118002000_match_attribution.sql` をルール・シーズン基盤の後に適用する。既存matches/match_resultsはlegacyでleague_idはNULL、既存match_dateはNULL。元のrule/season/記録者/参加者、素点、順位、numericポイントはそのまま保持する。
+
+app対局はリーグ・rule・記録者・timestamptzの対局日時が必須。seasonはUUIDまたはNULL。複合FKでrule・指定season・記録者所属を同一リーグに限定し、結果も同じ対局・リーグの参加者所属を参照する。結果の `data_origin` はleague_idから生成し、対局の `(id,data_origin)` へ追加FKを張る。NULLのleague_idでは通常の複合FK検査を通らないため、このFKで旧形式の結果をapp対局に追加する操作も拒否する。match_id自体が不明な既存結果はNULLのまま保持できる。参照中のseason削除や対局削除はRESTRICTとし、旧rule FKも削除を拒否する。履歴の日時順・シーズンや参照先の照合用indexを追加した。
+
+専用Goロールの対局・結果の読み書きは旧形式の列とlegacy行に限定する。現行保存から通常ルールを指す書込みを拒否し、app行を旧全件履歴から隔離する。DBの帰属制約は所属行の存在までを保証する。有効所属・ルールの利用可否と計算版の照合、指定seasonの日本時間期間の検証は対応するGo実装で行う。timestamptzで同じ瞬間を保持し、日時だけでseasonを設定しない。旧APIはmatch_dateがNULLのとき記録日時を返す互換動作を維持する。
+
+2-3ではGoのリーグ認可・絞り込みを実装した上で、通常履歴を読めるpolicyへ切り替える。Step 3では既存numericを再計算せずn/dへ移し、旧値を残す。新規の正確値保存、4結果・素点/ポイント合計の遅延制約、操作ID/hashと一意制約を用意し、Goの計算・ロック・再送検証と合わせて通常INSERTを有効化し、旧保存を停止する。訂正・取消・変更記録は対応する後続工程で追加する。
+
+## Step 2 / 2-3の履歴切替
+
+認証・設定済み本人の永続IDで対象リーグのactiveな登録者所属を確認する。対象リーグ認可と参照データの取得は読み取り専用REPEATABLE READの同じスナップショットで行う。リクエスト間では所属も参照元も再確認する。履歴では認可後のトランザクション内でだけ `mjstats.league_id` を設定し、GoのSQL絞り込みとRLSの両方でそのリーグのapp行に限定する。結果はmatchとleagueの両方で照合し、原参加者IDから現在名を取得する。DBロールはサービス境界として扱う。
+
+増分 `20261118003000_league_history_cutover.sql` は行を変更せず、未スコープSELECTから通常・legacy双方を隠し、Goの旧INSERT権限とpolicyを取り消す。Step 3で計算・保存の認可と正確値・操作ID等が揃うまで対局/結果のINSERTを許可しない。環境の切替順は [運用](setup-and-operations.md#step-2--2-3のローカル切替) を参照。
+
+## Step 2 / 2-4の作成記録
+
+`20261118004000_league_creation_events.sql` は設計済みの `league_events` のうち、作成と再送に必要な列を追加する。作成操作の一意性は `(actor_id,operation,client_request_id)`、元の初期ルールは記録の `after.initial_rule_id` から生成したUUIDと複合FKで保証し、同じリーグのruleを参照する。既存7表の値には手を加えない。
+
+Goのサービスロールはトランザクション内で認証済み本人の永続IDを設定し、その本人の `league.create` だけを列限定で参照・追記する。イベントの変更・削除や公開ロールの操作は許可しない。他のイベント種別の書込みや運営向けの閲覧は、対応する後続機能で権限を追加する。
+
+作成ではD-41の書込みトランザクションでAuthを再確認し、名前設定済みの本人行を共有ロックする。本人・操作種別・操作ID単位でトランザクション中だけアドバイザリロックを取得し、正規化後の名前のSHA-256を既存イベントと照合する。待機した処理はREAD COMMITTEDの次のSQLで先行処理の結果を読む。イベントの一意制約も重複を拒む。[PostgreSQLのトランザクションロック](https://www.postgresql.org/docs/17/explicit-locking.html#ADVISORY-LOCKS)
+
+番号は暗号学的乱数を12桁に整形する。番号の衝突だけを検知して最大5回再生成する。リーグ、owner所属、初期ルール、イベントを同じトランザクションで確定し、途中で失敗したら全体を戻す。再送はイベントの元IDを使い、有効所属の読取り境界を通して現在値を返す。
+
+## Step 2 / 2-5の招待管理
+
+`20261118005000_league_invites.sql` で `league_invites` を追加した。1リーグ1件の未失効を部分UNIQUEで保証する。期限切れの行も再発行時の失効対象とし、版を1増やす。発行時刻・期限はUTCの絶対時刻で168時間差。招待と発行者、リーグの参照はRESTRICT。サービスロールの変更権限は限定INSERT、失効時刻と版のUPDATE。本人と対象リーグのトランザクションscope、現行の有効な登録運営者所属をRLSでも照合する。
+
+`league_events` に `invite.issue / invite.revoke` の本人・対象リーグ限定の参照/追記を追加した。対象招待を生成列と複合FKで固定し、記録は操作種別・対象・結果版・入力ハッシュ等の列を使う。招待イベントの `after` は空オブジェクト。別リーグで同じ本人・操作種別・操作IDが使われたかは限定関数で真偽値を照合する。既存の作成イベントの参照と追記の条件は維持する。
+
+招待の変更はD-41のAuth再確認後、対象リーグの行を `FOR UPDATE`、本人行とその所属を共有ロックし権限を再照合する。続いて本人・操作種別・操作IDのアドバイザリロックを取得する。同じ操作の再送はREAD COMMITTEDで確定したイベントから解決する。旧招待の失効、新規発行、操作記録は一括で確定する。認可・照合・状態変更はGoを正本とする。
+
+2-6の参加ではAuth再確認 → 同じ対象リーグの行を `FOR UPDATE` → 本人行・所属の照合 → 招待の照合と所属の変更、の順を共有する。ロック取得後のDB時刻で `revoked_at IS NULL AND expires_at > 時刻` を確認し、ロックを所属変更のcommitまで保持する。参加者向けには制約された照合方法と試行制限を追加し、運営者向けの再表示scopeを流用しない。
+
+参加入力ではASCIIの小文字を大文字にし、表示用ハイフンを除いた16桁をCrockfordの採用アルファベット `0123456789ABCDEFGHJKMNPQRSTVWXYZ` で検証する。そのASCII文字列のSHA-256を小文字hexに変換し、DBの `credential_hash` と定時間で照合する。表示用コードは `APP_ORIGIN` を基準に生成したリンクのfragmentへハイフンなしで含める。再表示は発行時の鍵版を使用し、保存したhashとの一致を確認する。
+
+## Step 2 / 2-6の参加と検索
+
+参加は招待管理と同じリーグ行ロックを使う。操作種別 `league.join` の本人・操作IDを照合し、同一内容の再送は現在の所属を返す。参加時に照合した招待IDを同一リーグFKでイベントへ関連付け、コードを再比較するときだけ当時の招待ハッシュを同じ本人のイベントから解決する。後から終了した所属を再送で復活させない。参加・照合専用のDB関数でハッシュをGoへ返し、元の運営者向けRLSは維持する。
+
+検索順はNFKCとICUルートの小文字化をDBで統一し、表示名は変更しない。掲載対象の正規化名とIDの部分indexを使う。試行制限の共有カウンタはアプリの参加書込みから独立した短いSQL文で更新する。権限と設定は [ローカル適用・運用](setup-and-operations.md#step-2--2-6のローカル適用と試行制限) を参照する。
 
 ## 7つのコアテーブル
 
@@ -604,7 +654,7 @@ D-17に従い、リーグ通算は未指定シーズンを含み、特定シー�
 
 ## 設計確認11へ渡す目標データモデル
 
-以下は既存7テーブルを維持して承認済みの条件を実現する目標設計。usersはStep 1、leagues/league_membersは上記2-1の範囲を実装済み。残りは未適用。前半の39列・20制約は実DBの観測であり、この表の列を追加済みとは扱わない。DDL・制約名・適用履歴はコーディング移行後の該当Stepで作成し、Q-25で空DB/既存コピーの両方を確認する。
+以下は既存7テーブルを維持して承認済みの条件を実現する目標設計。usersはStep 1、leagues/league_membersは2-1、rule/seasonと対局帰属は上記2-2の範囲を実装済み。残りは目標設計。前半の39列・20制約は実DBの観測であり、この表の列を追加済みとは扱わない。DDL・制約名・適用履歴はコーディング移行後の該当Stepで作成し、Q-25で空DB/既存コピーの両方を確認する。
 
 | 対象 | 追加・変更する型と状態 | 制約・更新境界 |
 | --- | --- | --- |
@@ -626,7 +676,7 @@ app起源の対局にはcommit時の遅延制約で4結果・100点単位・適�
 
 | 補助表 | 主な列・型 | 一意性・用途 |
 | --- | --- | --- |
-| league_invites | id/league_id/issued_by：UUID、expires_at/revoked_at：timestamptz（失効はNULL可）、key_version：整数、credential_hash：64桁hex、version：bigint | リーグごとの未失効招待を1件に限定。期限切れも再発行時に失効し、新招待を同一txで作る。発行から7日。秘密コードを検索・ログ・一般情報へ出さない |
+| league_invites | id/league_id/issued_by：UUID、issued_at/expires_at/revoked_at：timestamptz（失効はNULL可）、key_version：整数、credential_hash：64桁hex、version：bigint | リーグごとの未失効招待を1件に限定。期限切れも再発行時に失効し、新招待を同一txで作る。発行から7日。秘密コードを検索・ログ・一般情報へ出さない |
 | participant_links | id/league_id/guest_user_id/registered_user_id/requested_by：UUID、status：pending/active/rejected/revoked、同意/申請/承認/解除の主体・日時、version、理由 | 1原ゲストに有効対応は1件だけの部分UNIQUE。登録参加者への1段対応。原対局参照は変更せず、履歴に原IDと本人IDの両方を返す。status遷移と競合をGo/txで検証 |
 | owner_transfers | id/league_id/from_user_id/to_user_id：UUID、status：pending/accepted/cancelled/expired、expires_at/acted_at：timestamptz、version | 1リーグ1件のpending、発行から7日の技術期限。旧ownerの提案と指名本人の同意を別操作とし、実行時に両者の有効所属/roleを再確認する |
 | match_revisions | id/league_id/match_id/actor_id/client_request_id：UUID、version：bigint、operation：create/update/cancel、request_hash、reason、before/after：jsonb、created_at：timestamptz | UNIQUE(match_id,version)、UNIQUE(league_id,actor_id,operation,client_request_id)。訂正・取消を追記し、元値を消さない。新規作成の記録はreason不要で、訂正/取消は空白除去後1〜500文字の理由を要求 |

@@ -1,7 +1,7 @@
 {
   "info": {
     "name": "MJ-Stats API",
-    "description": "MJ-Stats backend API test collection",
+    "description": "2-3: 設定済みBearerで所属リーグの参照。旧計算・保存は停止中。",
     "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json",
     "_postman_id": "3a515ecb-86f1-49f5-8ef8-e9742e2c77b5"
   },
@@ -18,7 +18,7 @@
       }
     },
     {
-      "name": "1. Calculate Match Points",
+      "name": "1. Calculate Match Points (409)",
       "request": {
         "method": "POST",
         "header": [
@@ -27,20 +27,12 @@
             "value": "application/json"
           }
         ],
-        "body": {
-          "mode": "raw",
-          "raw": "{\n  \"players\": [\n    {\"player_id\": \"user_1\", \"raw_score\": 35000},\n    {\"player_id\": \"user_2\", \"raw_score\": 28000},\n    {\"player_id\": \"user_3\", \"raw_score\": 22000},\n    {\"player_id\": \"user_4\", \"raw_score\": 15000}\n  ]\n}",
-          "options": {
-            "raw": {
-              "language": "json"
-            }
-          }
-        },
-        "url": "{{base_url}}/api/matches/calculate"
+        "url": "{{base_url}}/api/matches/calculate",
+        "description": "名前設定済みは409 RECORDING_UNAVAILABLE。未認証は401。計算・保存の副作用なし。"
       }
     },
     {
-      "name": "2. Create Match",
+      "name": "2. Create Match (409)",
       "request": {
         "method": "POST",
         "header": [
@@ -49,16 +41,8 @@
             "value": "application/json"
           }
         ],
-        "body": {
-          "mode": "raw",
-          "raw": "{\n  \"rule_id\": \"YOUR_RULE_UUID\",\n  \"season_id\": null,\n  \"results\": [\n    {\"player_id\": \"user_1\", \"raw_score\": 35000, \"point\": 45.0, \"rank\": 1, \"is_yakuman\": false},\n    {\"player_id\": \"user_2\", \"raw_score\": 28000, \"point\": 8.0, \"rank\": 2, \"is_yakuman\": false},\n    {\"player_id\": \"user_3\", \"raw_score\": 22000, \"point\": -18.0, \"rank\": 3, \"is_yakuman\": false},\n    {\"player_id\": \"user_4\", \"raw_score\": 15000, \"point\": -35.0, \"rank\": 4, \"is_yakuman\": false}\n  ]\n}",
-          "options": {
-            "raw": {
-              "language": "json"
-            }
-          }
-        },
-        "url": "{{base_url}}/api/matches"
+        "url": "{{base_url}}/api/matches",
+        "description": "名前設定済みは409 RECORDING_UNAVAILABLE。未認証は401。計算・保存の副作用なし。"
       }
     }
   ],

@@ -11,9 +11,13 @@ export function safeReturnTo(value: string | null | undefined): string {
     const decoded = decodeURIComponent(value)
     if (decoded !== value || /%[0-9a-f]{2}/i.test(decoded)) return '/matches'
     const url = new URL(value, 'https://app.invalid')
+    if (url.pathname !== value) return '/matches'
     if (url.origin !== 'https://app.invalid' || url.hash || url.search)
       return '/matches'
-    return ['/matches', '/matches/new', '/account'].includes(url.pathname)
+    const leagueHistory = /^\/matches\/league\/[a-f0-9]{8}(?:-[a-f0-9]{4}){3}-[a-f0-9]{12}(?:\/invites)?$/i
+    const joinPage = /^\/join\/[0-9]{12}$/
+    const pages = ['/matches', '/matches/new', '/account', '/leagues/new', '/leagues/search']
+    return (pages.includes(url.pathname) || leagueHistory.test(url.pathname) || joinPage.test(url.pathname))
       ? url.pathname
       : '/matches'
   } catch {

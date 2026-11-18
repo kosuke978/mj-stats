@@ -6,6 +6,7 @@ import { loginPath } from './paths'
 export async function clientAPI<T>(
   path: string,
   init: RequestInit = {},
+  expectedSubject?: string,
 ): Promise<T> {
   const supabase = browserSupabase()
   let {
@@ -22,6 +23,10 @@ export async function clientAPI<T>(
     throw new APIError(401, 'UNAUTHENTICATED', 'ログインし直してください')
   }
   const originalSubject = session.user.id
+  if (expectedSubject && originalSubject !== expectedSubject) {
+    window.location.replace(loginPath(window.location.pathname))
+    throw new APIError(401, 'UNAUTHENTICATED', '本人が変わりました。画面を開き直してください')
+  }
   let response = await tokenFetch(path, session.access_token, init)
   if (response.status === 401) {
     // Go's 401 is guaranteed to precede side effects. Never retry network/5xx writes.

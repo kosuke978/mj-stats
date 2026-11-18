@@ -16,7 +16,7 @@ import { type Viewer } from '@/lib/auth/api'
 import { loginPath } from '@/lib/auth/paths'
 import { Button } from '@/components/ui/button'
 
-type ViewerState = { viewer: Viewer; setViewer: (viewer: Viewer) => void }
+type ViewerState = { viewer: Viewer; subject: string; setViewer: (viewer: Viewer) => void }
 const ViewerContext = createContext<ViewerState | null>(null)
 export function useViewer() {
   const state = useContext(ViewerContext)
@@ -98,7 +98,7 @@ export function ViewerProvider({
     ) : null
   if (status === 'signed-out') return progress
   return (
-    <ViewerContext.Provider value={{ viewer, setViewer }}>
+    <ViewerContext.Provider value={{ viewer, setViewer, subject }}>
       {progress}
       <div hidden={status !== 'ready'}>
         <div className="mx-auto flex w-full max-w-2xl items-center justify-between gap-3 px-4 pt-4 text-sm">

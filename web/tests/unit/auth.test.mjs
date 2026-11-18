@@ -46,3 +46,22 @@ test('display name uses the same Unicode fixtures as Go', () => {
   for (const [input, expected] of cases)
     assert.equal(normalizeName(input), expected)
 })
+
+test('only a UUID league history pathname can survive a login redirect', () => {
+  const path = '/matches/league/71d00000-0000-4000-8000-000000000001'
+  assert.equal(safeReturnTo(path), path)
+  for (const suffix of ['/extra', '?cursor=forged', '#hash', '%2f']) {
+    assert.equal(safeReturnTo(path + suffix), '/matches')
+  }
+  assert.equal(safeReturnTo('/matches/league/not-a-uuid'), '/matches')
+})
+
+test('join return destination carries only the twelve-digit path', () => {
+  const path = '/join/000100200300'
+  assert.equal(safeReturnTo(path), path)
+  for (const invalid of [path + '#code=sample', path + '?code=sample', path + '0', path + '/', '/join/1234']) {
+    assert.equal(safeReturnTo(invalid), '/matches')
+  }
+  assert.equal(safeReturnTo('/leagues/new'), '/leagues/new')
+  assert.equal(safeReturnTo('/leagues/search'), '/leagues/search')
+})

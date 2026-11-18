@@ -112,6 +112,11 @@ export function CredentialsForm({
   }
   return (
     <div className="space-y-5">
+      {next.startsWith('/join/') && (
+        <p className="rounded-md border p-3 text-sm">
+          同じタブで手続きすると参加画面に戻ります。確認メールのリンクもこのタブで開いてください。
+        </p>
+      )}
       <form onSubmit={submit} className="space-y-4">
         <div className="space-y-2">
           <Label htmlFor="email">メールアドレス</Label>

@@ -143,39 +143,17 @@ test('Q-09/Q-10/Q-21: registration, browser/SSR, refresh, recovery and local log
     (await session(context)).value.refresh_token !== beforeRedirect,
   ).toBeTruthy()
   await page.goto('/matches/new')
-  const authorization: string[] = []
-  page.on('request', (request) => {
-    if (
-      request.url().startsWith(`${api}/api/matches`) &&
-      request.method() === 'POST'
-    )
-      authorization.push(request.headers().authorization ?? '')
+  await expect(page.getByText('対局の計算・記録は現在利用できません。')).toBeVisible()
+  await expect(page.getByRole('button', { name: '計算結果をプレビュー' })).toHaveCount(0)
+  const stopped = await context.request.post(`${api}/api/matches/calculate`, {
+    headers: { Authorization: `Bearer ${(await session(context)).value.access_token}` },
+    data: { players: [] },
   })
-  // Confirm the existing form has hydrated before sending select change events.
-  await page.getByRole('button', { name: '計算結果をプレビュー' }).click()
-  await expect(
-    page.getByText('メンバーを選択してください', { exact: true }).first(),
-  ).toBeVisible()
-  const names = ['こうすけ', 'さとし', 'りな', 'ゆうた']
-  for (let i = 0; i < 4; i++) {
-    await page.getByRole('combobox').nth(i).selectOption({ label: names[i] })
-    await page
-      .getByLabel('持ち点', { exact: true })
-      .nth(i)
-      .fill(String(400 - i * 100))
-  }
-  await page.getByRole('button', { name: '計算結果をプレビュー' }).click()
-  await expect(page.getByRole('dialog')).toBeVisible()
-  await page
-    .getByRole('dialog')
-    .getByRole('button', { name: 'この内容で保存' })
-    .click()
+  expect(stopped.status()).toBe(409)
+  expect((await stopped.json()).error.code).toBe('RECORDING_UNAVAILABLE')
+  await page.getByRole('link', { name: '履歴を見る' }).click()
   await expect(page).toHaveURL('/matches')
-  await expect(page.getByRole('heading', { name: '対局履歴' })).toBeVisible()
-  expect(authorization.length).toBe(2)
-  expect(
-    authorization.every((header) => header.startsWith('Bearer ')),
-  ).toBeTruthy()
+  await expect(page.getByText('所属しているリーグがありません。')).toBeVisible()
   const ssr = await context.request.get('http://localhost:3000/matches')
   expect(ssr.status()).toBe(200)
   expect(ssr.headers()['cache-control']).toContain('no-store')
@@ -271,7 +249,7 @@ test('Q-09/Q-10/Q-21: registration, browser/SSR, refresh, recovery and local log
     headers: { Authorization: `Bearer ${secondSession.value.access_token}` },
   })
   expect(alive.status).toBe(200)
-  await second.screenshot({ path: '../.local/account-390.png' })
+  await second.screenshot({ path: test.info().outputPath('account-390.png') })
   await expireAccessToken(secondContext, true)
   await second.goto('/matches/new')
   await expect(second).toHaveURL(/\/login\?returnTo=%2Fmatches%2Fnew/)
@@ -301,7 +279,7 @@ for (const width of [360, 390, 768, 1280]) {
       ),
     ).toBeTruthy()
     if (width === 360)
-      await page.screenshot({ path: '../.local/login-360-text200.png' })
+      await page.screenshot({ path: test.info().outputPath('login-360-text200.png') })
   })
 }
 
@@ -381,4 +359,42 @@ test('Q-10: changing accounts discards the previous viewer and SSR cache', async
     participants.length === 2 && participants[0] !== participants[1],
   ).toBeTruthy()
   await context.close()
+})
+
+test('Q-19/Q-21: invitation return path survives signup, email confirmation and profile setup', async ({ page }) => {
+  const email = `join-signup-${Date.now()}@example.test`
+  const path = '/join/000100200300'
+  // A well-formed fake invite for a league that does not exist in the fixture.
+  const code = '0123456789ABCDEF'
+  await page.goto(path + '#code=' + code)
+  await expect(page).toHaveURL(path)
+  await page.getByRole('link', { name: '新規登録' }).click()
+  await expect(page).toHaveURL(`/signup?returnTo=${encodeURIComponent(path)}`)
+  await page.getByLabel('メールアドレス').fill(email)
+  await page.getByLabel('パスワード').fill(password)
+  await page.getByRole('button', { name: '登録して確認メールを受け取る' }).click()
+  const link = await mailLink(email, '登録')
+  const params = new URL(link).searchParams
+  expect(params.get('returnTo')).toBe(path)
+  expect(params.has('code')).toBeFalsy()
+  await confirm(page, link)
+  await expect(page).toHaveURL(`/profile/setup?returnTo=${encodeURIComponent(path)}`)
+  await page.getByLabel('表示名').fill('招待復帰の試験')
+  await page.getByRole('button', { name: '表示名を設定して進む' }).click()
+  await expect(page).toHaveURL(path)
+  await expect.poll(async () => (await page.getByLabel('参加コード').inputValue()) === code).toBeTruthy()
+  const otherTab = await page.context().newPage()
+  try {
+    await otherTab.goto(path)
+    await expect(otherTab.getByLabel('参加コード')).toBeEmpty()
+    await expect(otherTab.getByText(/招待リンクを開き直すか/)).toBeVisible()
+  } finally {
+    await otherTab.close()
+  }
+  await expect(page.getByRole('button', { name: 'このリーグに参加' })).toHaveCount(0)
+  await page.getByRole('button', { name: '招待を確認' }).click()
+  await expect(page.getByRole('main').getByRole('alert')).toContainText('有効な招待がありません')
+  await expect(page.getByLabel('参加コード')).toBeEmpty()
+  await page.goto('/matches')
+  await expect(page.getByText('所属しているリーグがありません。')).toBeVisible()
 })

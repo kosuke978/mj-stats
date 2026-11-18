@@ -1,8 +1,84 @@
 # 実装済み機能とAPI契約
 
-前半はStep 1作業ブランチの現行実装。認証・本人情報以外の対局契約は基準コミット `12760ca` を維持する。後半はPhase 2.5全体の目標。Step 1は完了承認・PR #8マージ済み。Step 2は着手済みで、2-1のリーグ/所属DB基盤のみ追加した。API/画面は今回変更せず、リーグAPI・所属認可・履歴制限は未実装。Step 1の実行結果・未実施は [品質・受入](quality-and-acceptance.md#step-1実装ブランチの検証記録2026-11-17) を参照する。要求は [requirements.md](requirements.md)、工程は [product-roadmap.md](product-roadmap.md)、設計条件は [architecture.md](architecture.md) を参照する。
+Step 1は完了承認済み、2-1はPR #9でマージ済み。Draft PR #10で2-2〜2-7を実装した。実行結果は [Step 2総合受入](quality-and-acceptance.md#step-2の総合受入) を参照する。Step完了承認とPRマージは開発者判断。
 
-## 画面と利用フロー
+## 2-7のWeb接続
+
+`/matches` に作成と参加への入口を追加した。 `/leagues/new` の作成後は作成リーグの履歴へ進む。 `/leagues/search` は掲載名検索・ページングと番号入力を提供する。履歴のowner/adminだけに招待管理への入口があり、 `/matches/league/{id}/invites` で現行の取得、発行・再発行、失効を操作できる。直URLでもGoの対象リーグの所属とroleを照合する。
+
+`/join/{group_number}` は参加リンクと手入力の共通画面。ブラウザがfragmentを読み、URLから直ちに取り除く。コードは対象番号とともに同じタブの `sessionStorage` に最長15分保持し、認証後は本人にも結び付ける。 `returnTo` は参加画面のパスだけ。ログイン・メール確認・初回表示名設定後もリンクを開いた同じタブでコードを復元する。別タブや期限超過などで復元できなければ、リンクの開き直し・手入力を案内する。プレビューと参加送信は別操作であり、ページ表示や認証復帰で参加を実行しない。参加成功後は対象リーグの履歴を再取得し、所属一覧へ戻れる。
+
+通信断などで結果不明の場合、同じ画面内の再試行では元の本文と操作IDを再利用する。参加用のコードは `returnTo`・クエリ・SSR・ログに含めず、照合時だけJSON本文で送る。参加完了、無効と判明したとき、ログアウト、本人・対象の切替時に保持内容を破棄する。試行制限では `Retry-After` と再試行の案内を表示する。失効・期限切れなどの無効招待は同じ案内で新しい招待を求める。記録停止は履歴と旧入力の案内を維持する。
+
+## 2-6のリーグ検索・参加API
+
+すべて有効セッションと表示名設定済みの登録者を要求する。最小リーグ情報は `{id,name,group_number}`。プレビューと参加のコードはJSON本文に入れる。
+
+| 操作 | 入力 | 成功応答 |
+| --- | --- | --- |
+| GET `/api/leagues/search` | `q` 必須、`limit,cursor` 任意 | 200 `{leagues,next_cursor}`。掲載済みのみ |
+| POST `/api/leagues/resolve` | `{group_number}` | 200 `{league}`。非掲載も可、未発見は404 `NOT_FOUND` |
+| POST `/api/leagues/join-preview` | `{group_number,code}` | 200 `{league,expires_at}`。所属変更なし |
+| POST `/api/leagues/{league_id}/join` | `{code,client_request_id}` | 200 `{membership}`。本人の `league_id,user_id,kind,role,status,version` |
+
+検索は前後空白を除き、NFKC・小文字化した2〜100コードポイントの部分一致。%と_は文字として扱う。カーソルは本人・正規化後の検索語・名前とIDの順序に結び付け、limitは既定20、1〜100。番号はASCII数字12桁で先頭ゼロを保持し、表示用ハイフンとASCII空白を除く。
+
+コードをASCII大文字化し、表示用ハイフンを除去してCrockford Base32の16桁でない場合は400 `INVALID_INPUT`（`code`）。形式が正しくても不一致・期限切れ・失効、または照合対象が存在しなければ404 `INVALID_INVITE`。形式不正も対象を指定した照合試行として数え、上限超過は429。プレビューの結果があっても参加時に再照合する。新規・脱退・除名後はmember、既存の有効所属はroleと版を維持する。同じ本人・操作ID・リーグ・正規化したコードの再送は元の操作を二度適用せず現在の所属を返す。現在の状態が終了済みならそのまま返す。同じ操作IDでリーグやコードが違えば409 `IDEMPOTENCY_CONFLICT`。試行制限はプレビューと参加で共通であり、再送にも適用する。
+
+## 2-5の招待管理API
+
+対象リーグの `active/registered` 所属が `owner` または `admin` の名前設定済み本人が使える。以下のパスは `/api/leagues/{league_id}` 配下。query項目は受け付けない。
+
+| 操作 | JSON入力 | 成功応答 |
+| --- | --- | --- |
+| GET `/invites/current` | なし | 200 `{invite}`。未発行・期限切れ・失効後は `{"invite":null}` |
+| POST `/invites` | `{client_request_id}` | 新規201、再送200 `{invite}`。期限切れを含む旧未失効招待を同時に失効 |
+| POST `/invites/{id}/revoke` | `{client_request_id,version}` | 200 `{invite}`。期限切れでも未失効なら失効可 |
+
+`invite` は `id, league_id, issued_at, expires_at, revoked_at, version, status` を持つ。日時はUTC、未失効の `revoked_at` はNULL、versionは正の10進整数文字列。 `status` は `active / expired / revoked`。有効な招待だけに `code`（4桁区切り）と `join_url` を付ける。有効期間は発行から168時間で、期限と同じ時刻は期限切れ。応答は `Cache-Control: private, no-store`。発行・失効で既存所属は変わらない。
+
+変更の操作IDはUUID。本人・操作種別・IDをキーに、認可の再確認後、版を照合する前に再送を判定する。対象と内容が同じ再送は元の招待の現在の状態を返す。元が期限切れ・失効済みなら資格情報のフィールドは省略される。別リーグ・別対象・版違いなど、同じ操作IDで内容を変えると409 `IDEMPOTENCY_CONFLICT`。新しい操作IDで古い版を指定した失効は409 `VERSION_CONFLICT`、失効済みの現在版を指定した新規失効は409 `STATE_CONFLICT`。
+
+未認証401、本人情報なし・名前未設定403、未所属または存在しないリーグ403 `LEAGUE_ACCESS_DENIED`、有効memberは403 `FORBIDDEN`。運営者の対象リーグに招待IDがなければ404 `NOT_FOUND`。不正な入力は共通エラーに従い、未設定・鍵不一致・DB障害は503 `TEMPORARILY_UNAVAILABLE`。参加・再参加・照合・試行制限は上記2-6の契約を使う。Web接続は上記2-7を参照する。設定と適用は [運用手順](setup-and-operations.md#step-2--2-5のローカル適用と招待鍵) を参照する。
+
+## 2-4のリーグ作成API
+
+`POST /api/leagues` は名前設定済みの登録者向け。既存リーグへの所属は不要。入力は `{"name":"仲間のリーグ","client_request_id":"00000000-0000-4000-8000-000000000001"}`。操作IDはUUID。リーグ名は前後のUnicode空白を除いて1〜100コードポイントで、改行・制御文字を拒否する。ownerやroleの指定、未知/重複キーは400。
+
+初回は201 `{league,rule}`。`league` は下記のリーグ詳細と同じ `id,name,group_number,my_role`、`rule` はルール一覧の要素と同じ型。グループ番号は先頭ゼロを含む12桁の文字列。初期ownerは検証済み本人の永続参加者ID、所属はregistered/active/owner。初期ルールは25,000点持ち・30,000点返し、ウマ20/10/−10/−20、exact_v1、利用可。リーグは非掲載で、シーズンは作らない。
+
+同じ本人・操作ID・正規化後の名前で再送すると200。同じリーグと初期ルールのIDを使って参照時点の値を返す。再送時に参照権限も確認する。同じ本人・操作IDで名前が違えば409 `IDEMPOTENCY_CONFLICT`。新規操作では新しいUUIDを使い、通信が切れた場合は同じ内容とUUIDを保持する。番号は衝突時に最大5回再生成し、上限到達・DB障害は503。未認証は401、本人情報なしまたは名前未設定は403。リーグ、owner所属、初期ルール、操作記録は一括で確定する。
+
+## 2-3の参照API実装
+
+| GET | 応答 | 範囲 |
+| --- | --- | --- |
+| `/api/leagues` | `{leagues:[{id,name,group_number,my_role}]}` | 本人の有効所属 |
+| `/api/leagues/{league_id}` | `{league:{id,name,group_number,my_role}}` | 対象リーグでの本人role |
+| 同 `/participants` | `{participants:[{id,name,kind,version}],next_cursor}` | 有効な登録参加者・ゲスト |
+| 同 `/members` | `{members:[{user_id,name,kind,role,status,version}],next_cursor}` | active/left/removedの所属。legacyは除外 |
+| 同 `/rules` | `{rules:[{id,name,default_points,return_points,uma,calculation_version,available,version}],next_cursor}` | `available=true` が既定。`false`、`all` も指定可。legacy版は除外 |
+| 同 `/seasons` | `{seasons:[{id,name,start_date,end_date,version}],next_cursor}` | UUID。日付はYYYY-MM-DDまたはNULL |
+
+JWT・有効セッション・設定済み本人を確認し、その永続IDと指定リーグのactiveなregistered所属を照合する。存在しないUUIDと非所属は同じ403。構文不正なUUID・許可外、重複または空の一覧queryは400。ページは既定20、1〜100。参加者・所属は名前/ID、rule/seasonは作成日時（NULL末尾）/IDの昇順。cursorを本人・リーグ・一覧種類・絞り込みに結び付ける。ページングのcursorは認可の代わりにしない。
+
+### 2-3の履歴と停止中の旧経路
+
+- `GET /api/leagues/{league_id}/matches` は `{matches,next_cursor}`。行は `id,league_id,rule_id,season_id,recorded_by,match_date,created_at,results`、結果は `user_id,display_name,raw_score,rank,point`。pointはDBに保存済みのnumberで、正確値の分数型への切替はStep 3。
+- 日時はUTCまたはNULLのまま。通常対局には現DB制約で対局日時が必須。旧行への日時補完は行わず、通常履歴にも含めない。結果の並びは保存済み順位と原ID。本人対応ID、取消状態、版は未導入。
+- `season` は省略/`all`、`unassigned`、UUID。所属確認後、指定のシーズンが当該リーグになければ404。 `status=all`（既定）/`valid` は現行行を返し、`cancelled` は空配列。limitとcursorは上記の契約で、日時/記録日時/IDの降順と絞り込みに結び付ける。
+- `GET /api/matches` は `league_id` 必須の移行用アダプタ。同じ認可・履歴契約を使い、全件取得はできない。
+- `POST /api/matches`、`POST /api/matches/calculate` は、認証・本人設定確認後に409 `RECORDING_UNAVAILABLE`。bodyに関係なく計算も書込みも行わない。Step 3の新規経路への切替時に旧POSTを410へ移す予定。
+
+### 2-3のWeb
+
+`/matches` は所属リーグ一覧。選択すると `/matches/league/{league_id}` がサーバー側の本人Bearerでリーグ詳細、シーズン候補と履歴を取得する。シーズンと次ページはそのリーグのURLに保持し、リーグや本人の切替で引き継がない。空の所属・空の履歴・閲覧拒否・取得失敗・記録停止を区別する。未ログインの正規UUID付き直URLはログイン後に戻り、所属を確認する。日時を日本時間で表示し、対局日時が不明なら記録日時か日時不明を示す。`/matches/new` は計算・記録の利用停止を案内する。
+
+## Step 1〜2-2時点の仕様資料
+
+認証・本人情報の仕様は引き続き利用する。この節の固定選択肢、計算・保存、全件履歴は2-2までの旧対局経路の記録。現状は冒頭の2-3節を使う。
+
+### 画面と利用フロー（当時）
 
 | URL | 実装されていること | 制限・未完了 |
 | --- | --- | --- |
@@ -43,7 +119,7 @@
 
 ### 対局入力の詳細
 
-根拠：[MatchInputForm.tsx](../web/src/components/match/MatchInputForm.tsx)。
+当時の実装は2-2のコミット `1766d4d` にある旧入力フォームを参照。
 
 - 登録メンバーの選択肢はseedと同じUUIDの5名。同一登録メンバーの重複選択を拒否する。
 - 1人目に「起家」と表示するが、座順をAPI・DBへ保存する実装はない。
@@ -57,7 +133,7 @@
 
 ## ポイント計算の現在の仕様
 
-根拠：[calculateResults](../api/controllers/match_controller.go)。DBの `rules` は参照せず、25,000点持ち・30,000点返し・ウマ `+20/+10/-10/-20`・総オカ20ポイント相当をハードコードしている。「Mリーグ公式規則を完全に実装した」という意味ではない。
+当時の実装は2-2のコミット `1766d4d` にある `calculateResults` を参照。DBの `rules` は参照せず、25,000点持ち・30,000点返し・ウマ `+20/+10/-10/-20`・総オカ20ポイント相当をハードコードしている。「Mリーグ公式規則を完全に実装した」という意味ではない。
 
 ```text
 基礎ポイント = (raw_score - 30,000) / 1,000
@@ -273,10 +349,10 @@ field_errorsは入力不備の場合だけ返し、messageは表示用、分岐�
 | GET /api/users/me | 本人JWT | 200 {id,name,profile_completed_at}。auth_idで検索/並行初回作成。初期名Player、完了時刻NULL。既存名を上書きしない / Step 1 |
 | PATCH /api/users/me | 本人JWT、{name}のみ | 200で同じ本人型。D-24で検証し、初回だけ完了時刻も一括設定。以後の名前変更で完了時刻・他人のIDを変更しない / Step 1 |
 | GET /api/leagues | 設定済 | 200 {leagues:[{id,name,group_number,my_role}]}、自分の有効所属だけ / Step 2 |
-| POST /api/leagues | 設定済、{name,client_request_id} | 201 {league,rule}。番号/リーグ/初期owner所属/初期ルールを一括作成。シーズンは自動作成せず、初期非掲載 / Step 2 |
+| POST /api/leagues | 設定済、{name,client_request_id} | 初回201、同内容再送200 {league,rule}。番号/リーグ/初期owner所属/初期ルールと操作記録を一括作成。シーズンは自動作成せず、初期非掲載 / 2-4実装済み |
 | GET /api/leagues/search | 設定済、q/cursor/limit | 200 {leagues,next_cursor}。掲載済みのid/name/group_numberだけ。参加コード・所属者・成績なし / Step 2 |
 | POST /api/leagues/resolve | 設定済、{group_number} | 200で最小リーグ情報、番号なしは404。非掲載も番号で解決可。所属作成なし / Step 2 |
-| POST /api/leagues/join-preview | 設定済、{group_number,code} | 200で最小リーグ情報とexpires_at。無効/期限切れ/失効は404 INVALID_INVITEに統一。所属作成なし / Step 2 |
+| POST /api/leagues/join-preview | 設定済、{group_number,code} | 200で最小リーグ情報とexpires_at。形式不正は400、形式が正しい不一致/期限切れ/失効は404 INVALID_INVITE。所属作成なし / Step 2 |
 | POST /api/leagues/{league_id}/join | 設定済、{code,client_request_id} | 200 {membership}。要求時点の招待を検証。未所属/退出/除名済みはmemberへ、有効所属は元roleを維持 / Step 2 |
 | GET /api/leagues/{league_id} | 所属 | 200でリーグと本人role。一般情報に参加資格を含めない / Step 2 |
 | PATCH /api/leagues/{league_id} | 運営、{name?,search_listed?,version,client_request_id} | 200、設定と変更記録を一括更新。owner_idは受け付けない / Step 5 |
@@ -307,7 +383,7 @@ me以外の名前はゲスト1〜30、リーグ/ルール/シーズン1〜100コ
 | PATCH /members/{user_id} | owner、{role:"admin"または"member",version,client_request_id} | 200。対象は有効な登録者、現ownerの変更やbodyのowner指定は拒否 / Step 5 |
 | POST /members/{user_id}/remove | owner、または対象がmemberの場合だけadmin。{reason,version,client_request_id} | 200。登録者の所属をremovedにする。owner本人とguest/legacyは対象外 / Step 5 |
 | POST /leave | 所属、{client_request_id} | 200。本人をleftにし、ownerは409で引継ぎへ案内。原ID・成績は残す / Step 5 |
-| GET /invites/current、POST /invites、POST /invites/{id}/revoke | 運営。変更はclient_request_id、失効はversionも要求 | GET200、発行201、失効200。発行時は旧共通招待を失効し、コード/リンクは運営だけへ返す / Step 2 |
+| GET /invites/current、POST /invites、POST /invites/{id}/revoke | 運営。変更はclient_request_id、失効はversionも要求 | GET200、発行201、失効200。発行時は旧共通招待を失効。有効時のコード/リンクは運営だけへ返す / 2-5実装済み |
 | POST /participant-links | 所属、{guest_user_id,client_request_id} | 201で本人の申請/同意を記録。対応先の登録者IDはGoが本人から設定 / Step 3 |
 | GET /participant-links | 所属、cursor/limit | 200。一般memberは本人の申請だけ、運営はリーグの申請/対応を閲覧 / Step 3 |
 | POST /participant-links/{id}/approve または /reject | 運営、{confirmation_note,version,client_request_id} | 200。owner/adminの自己承認可。承認は同卓重複/他人への有効対応/循環を再確認 / Step 3 |

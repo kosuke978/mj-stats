@@ -1,0 +1,12 @@
+$kind: http-request
+description: "名前設定済み登録者が初期ownerとして作成。初回201、同じ操作IDと内容の再送は200、内容違いは409。"
+url: "{{base_url}}/api/leagues"
+method: POST
+headers:
+  Authorization: "Bearer {{access_token}}"
+  Content-Type: application/json
+body:
+  type: json
+  content: |
+    {"name":"Postmanリーグ","client_request_id":"{{client_request_id}}"}
+order: 17000

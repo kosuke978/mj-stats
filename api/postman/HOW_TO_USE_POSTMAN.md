@@ -1,4 +1,4 @@
-> Step 1更新（2026-11-17）: 保護APIは本人のaccess tokenが必須です。v2.0 collectionのhealth → Get Me → Set My Display Name → 計算/保存/履歴の順に使用してください。URLは{{base_url}}、collectionのBearerは{{access_token}}。環境のaccess_tokenはローカル値にだけ入力し、export/共有には含めません。Missing Bearer / Invalid JWTは401が期待値です。旧対局body・数値pointを維持し、リーグ認可は未実装です。書込みは専用ローカルDBに限定し、共有DBへ適用しません。Postman UI実行は今回未実施で、同じAPIの実行証跡はdoc/quality-and-acceptance.mdを参照してください。
+> 現行APIの確認順・変数・期待ステータスは [現在のPostman手順](README.md) を参照してください。
 
 # Postman を使った API テスト・ガイド
 
@@ -24,7 +24,7 @@ APIテストでは、以下の3点が「設計通りに動くか」を確認し�
 
 ## 2. API開発とテストの基本ワークフロー
 
-新しいAPI（例：成績一覧を取得する `GET /api/matches` など）を作った際の、基本的な手順は以下の通りです。
+新しいAPI（例：成績一覧を取得する `GET /api/leagues/{league_id}/matches` など）を作った際の、基本的な手順は以下の通りです。
 
 ### Step 1: API (Go) のコードを書く
 - ルーティング（`main.go` など）にパスを追加する。
@@ -46,7 +46,7 @@ go run .
 ### Step 4: Postman でリクエストを作成・送信する
 1. Postman を開き、`+` ボタンから新しい Request を作成します。
 2. HTTPメソッド（GET, POST, PUT, DELETE など）を選択します。
-3. URLを入力します。（例: `http://localhost:8080/api/matches`）
+3. URLを入力します。（例: `http://localhost:8080/api/leagues/{{league_id}}/matches`）
 4. （POST/PUTの場合）`Body` タブ -> `raw` -> `JSON` を選択し、送信するデータを書きます。
 5. **Send** ボタンを押します。
 
