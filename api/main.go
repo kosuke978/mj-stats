@@ -18,9 +18,10 @@ import (
 	"github.com/kosuke/mj-stats-api/controllers"
 	"github.com/kosuke/mj-stats-api/db"
 	"github.com/kosuke/mj-stats-api/httpx"
+	"github.com/kosuke/mj-stats-api/invites"
 )
 
-func router(database *sql.DB, verifier *auth.Verifier, origins []string) *gin.Engine {
+func router(database *sql.DB, verifier *auth.Verifier, origins []string, inviteConfig *invites.Config) *gin.Engine {
 	guard := &auth.Guard{DB: database, Verifier: verifier}
 	leagues := &controllers.LeagueController{DB: database}
 	users := &controllers.UserController{Auth: guard}
@@ -50,6 +51,10 @@ func router(database *sql.DB, verifier *auth.Verifier, origins []string) *gin.En
 	normal.GET("/leagues", leagues.List)
 	normal.POST("/leagues", (&controllers.LeagueCreator{Auth: guard}).Create)
 	normal.GET("/leagues/:league_id", leagues.Detail())
+	invitations := &controllers.LeagueInvites{Auth: guard, Config: inviteConfig}
+	normal.GET("/leagues/:league_id/invites/current", invitations.Current())
+	normal.POST("/leagues/:league_id/invites", invitations.Issue)
+	normal.POST("/leagues/:league_id/invites/:id/revoke", invitations.Revoke)
 	for _, list := range []string{"participants", "members", "rules", "seasons"} {
 		normal.GET("/leagues/:league_id/"+list, leagues.Reference(list))
 	}
@@ -71,6 +76,10 @@ func main() {
 		}
 		origins[i] = origin
 	}
+	inviteConfig, err := invites.NewConfig(os.Getenv("APP_ORIGIN"), os.Getenv("INVITE_KEYS_JSON"), os.Getenv("INVITE_CURRENT_KEY_VERSION"))
+	if err != nil {
+		log.Fatal("Invalid invite configuration")
+	}
 	database, err := db.NewDB()
 	if err != nil {
 		log.Fatal("Unable to connect to database")
@@ -80,7 +89,7 @@ func main() {
 	if port == "" {
 		port = "8080"
 	}
-	server := &http.Server{Addr: ":" + port, Handler: router(database, verifier, origins), ReadHeaderTimeout: 5 * time.Second, ReadTimeout: 10 * time.Second, WriteTimeout: 15 * time.Second, IdleTimeout: 60 * time.Second}
+	server := &http.Server{Addr: ":" + port, Handler: router(database, verifier, origins, inviteConfig), ReadHeaderTimeout: 5 * time.Second, ReadTimeout: 10 * time.Second, WriteTimeout: 15 * time.Second, IdleTimeout: 60 * time.Second}
 	log.Printf("Starting API on port %s", port)
 	if server.ListenAndServe() != nil {
 		log.Fatal("API server stopped")

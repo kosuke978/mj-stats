@@ -65,7 +65,7 @@ func TestStep1ManagedSupabase(t *testing.T) {
 	if err != nil {
 		t.Fatal("QA verifier configuration")
 	}
-	api := httptest.NewServer(router(database, verifier, []string{"http://localhost:3001"}))
+	api := httptest.NewServer(router(database, verifier, []string{"http://localhost:3001"}, nil))
 	defer api.Close()
 	cli, _ := filepath.Abs("../node_modules/.bin/supabase")
 	workdir, _ := filepath.Abs("..")

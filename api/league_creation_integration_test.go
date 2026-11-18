@@ -219,7 +219,7 @@ func testLeagueCreation(t *testing.T, ctx context.Context, db, admin *sql.DB, ve
 	// closing the connection before writing any HTTP bytes to the client.
 	var committed map[string]any
 	committedResult := make(chan map[string]any, 1)
-	handler := router(db, verifier, []string{"http://localhost:3000"})
+	handler := router(db, verifier, []string{"http://localhost:3000"}, nil)
 	dropper := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		rec := httptest.NewRecorder()
 		handler.ServeHTTP(rec, r)
