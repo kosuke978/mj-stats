@@ -7,6 +7,7 @@ import { fixtureID, leagueA, normalLeagues, ownerA, testRuleSeasonFoundation } f
 import { testMatchAttribution } from './test-match-attribution.mjs'
 import { eventTableShape, testLeagueCreationEvents } from './test-league-creation-events.mjs'
 import { testLeagueInvites } from './test-league-invites.mjs'
+import { testParticipation } from './test-league-participation.mjs'
 const container = 'supabase_db_mj-stats-step1'
 const info = JSON.parse(execFileSync('docker', ['inspect', container], { encoding: 'utf8' }))[0]
 if (info.Config.Labels['com.supabase.cli.project'] !== 'mj-stats-step1' || !info.NetworkSettings.Ports['5432/tcp'].some(p => p.HostPort === '55422')) throw new Error('Refusing unknown environment')
@@ -43,6 +44,7 @@ const leagueFoundation = '20261118000000_league_membership_foundation.sql'
 const historyCutover = '20261118003000_league_history_cutover.sql'
 const leagueCreationEvents = '20261118004000_league_creation_events.sql'
 const leagueInvites = '20261118005000_league_invites.sql'
+const leagueParticipation = '20261118006000_league_participation.sql'
 const step22Files = files.slice(files.indexOf(leagueFoundation) + 1, files.indexOf(historyCutover))
 const migration = file => readFileSync(`supabase/migrations/${file}`, 'utf8')
 // Isolated acceptance ledger using the Supabase history shape. Exact SQL and
@@ -78,7 +80,8 @@ try {
   stage = 'empty full application'
   for (const file of files) apply(file, applied)
   const emptyShape = Object.fromEntries(Object.entries(queries).map(([name,q]) => [name, JSON.parse(sql(q))]))
-  const emptyInviteShapes = ['league_events', 'league_invites'].map(table => JSON.parse(sql(eventTableShape(table))))
+  const additionalTables = ['league_events', 'league_invites', 'api_rate_limits']
+  const emptyAdditionalShapes = additionalTables.map(table => JSON.parse(sql(eventTableShape(table))))
   console.log('PASS empty database: all migrations + complete history applied as postgres')
   // Roll back this test-only schema rebuild in a disposable database, never the
   // local stack's postgres database. Cluster roles and Auth metadata stay intact.
@@ -177,9 +180,13 @@ try {
     ROLLBACK;`)
   const beforeInvites = sql(step22Query)
   apply(leagueInvites, applied)
-  if (sql(step22Query) !== beforeInvites || sql('SELECT count(*) FROM public.league_events') !== '0'
-    || !sameJSON(emptyInviteShapes, ['league_events', 'league_invites'].map(table => JSON.parse(sql(eventTableShape(table)))))) throw new Error('2-5 rows or schema differ')
-  console.log('PASS 2-5 invitation migration preserves old values and 2-4 creation event; empty/incremental invite and event schemas match')
+  if (sql(step22Query) !== beforeInvites || sql('SELECT count(*) FROM public.league_events') !== '0') throw new Error('2-5 rows differ')
+  console.log('PASS 2-5 invitation migration preserves old values and 2-4 creation event')
+  const beforeParticipation = sql(step22Query)
+  apply(leagueParticipation, applied)
+  if (sql(step22Query) !== beforeParticipation
+    || !sameJSON(emptyAdditionalShapes, additionalTables.map(table => JSON.parse(sql(eventTableShape(table)))))) throw new Error('2-6 rows or schema differ')
+  console.log('PASS 2-6 participation migration preserves older rows; empty/incremental supplemental schemas match')
 
   if (beforeStep22 !== sql(step21Query)) throw new Error('2-1 values changed')
   console.log('PASS 2-1 upgrade: normal and legacy rows unchanged; older NULL/inverted dates and numeric values preserved')
@@ -226,6 +233,8 @@ try {
   testLeagueCreationEvents(sql, fullRowQuery)
   stage = 'invitation constraints and permissions'
   testLeagueInvites(sql, fullRowQuery)
+  stage = 'participation and shared limiter permissions'
+  testParticipation(sql, fullRowQuery)
   if (!snapshot) console.log('Actual-copy acceptance is separate: rerun with --snapshot <read-only-export.json>.')
 } catch (error) {
   // SQLSTATE only: never emit row values, query text or connection details.
