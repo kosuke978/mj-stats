@@ -87,19 +87,46 @@ func (c *Config) derive(leagueID, id string, version int) string {
 }
 
 func (c *Config) IssueHash(leagueID, id string) string {
-	sum := sha256.Sum256([]byte(c.derive(leagueID, id, c.current)))
+	return Hash(c.derive(leagueID, id, c.current))
+}
+
+func Hash(code string) string {
+	sum := sha256.Sum256([]byte(code))
 	return hex.EncodeToString(sum[:])
 }
 
 // Display checks the stored digest before revealing a regenerated credential.
 func (c *Config) Display(leagueID, id string, version int, hash, group string) (code, link string, ok bool) {
 	canonical := c.derive(leagueID, id, version)
-	sum := sha256.Sum256([]byte(canonical))
-	if canonical == "" || !hmac.Equal([]byte(hex.EncodeToString(sum[:])), []byte(hash)) {
+	if canonical == "" || !hmac.Equal([]byte(Hash(canonical)), []byte(hash)) {
 		return "", "", false
 	}
 	u := c.origin
 	u.Path = "/join/" + group
 	u.Fragment = "code=" + canonical
 	return canonical[:4] + "-" + canonical[4:8] + "-" + canonical[8:12] + "-" + canonical[12:], u.String(), true
+}
+
+// NormalizeCode accepts only the ASCII Crockford alphabet, ignoring display
+// hyphens and ASCII letter case. An empty result means the format is invalid.
+func NormalizeCode(input string) string {
+	var canonical [16]byte
+	size := 0
+	for _, ch := range []byte(strings.TrimSpace(input)) {
+		if ch == '-' {
+			continue
+		}
+		if ch >= 'a' && ch <= 'z' {
+			ch -= 'a' - 'A'
+		}
+		if size == len(canonical) || !strings.ContainsRune("0123456789ABCDEFGHJKMNPQRSTVWXYZ", rune(ch)) {
+			return ""
+		}
+		canonical[size] = ch
+		size++
+	}
+	if size != len(canonical) {
+		return ""
+	}
+	return string(canonical[:])
 }

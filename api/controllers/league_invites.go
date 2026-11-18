@@ -179,24 +179,31 @@ func lockInviteLeague(c *gin.Context, ctx context.Context, tx *sql.Tx, leagueID,
 		return "", false
 	}
 
-	var completed bool
-	err = tx.QueryRowContext(ctx, `SELECT profile_completed_at IS NOT NULL FROM public.users
-		WHERE id=$1 AND auth_id=$2 AND participant_kind='registered' FOR SHARE`, actor, auth.From(c).Subject).Scan(&completed)
-	switch {
-	case errors.Is(err, sql.ErrNoRows):
-		httpx.Error(c, 403, "PROFILE_REQUIRED", "本人情報を取得してください", nil)
-		return "", false
-	case err != nil:
-		httpx.Unavailable(c)
-		return "", false
-	case !completed:
-		httpx.Error(c, 403, "PROFILE_INCOMPLETE", "表示名を設定してください", nil)
+	if !lockRegisteredActor(c, ctx, tx, actor) {
 		return "", false
 	}
 	err = tx.QueryRowContext(ctx, `SELECT role FROM public.league_members
 		WHERE league_id=$1 AND user_id=$2 AND status='active' AND participant_kind='registered' FOR SHARE`,
 		leagueID, actor).Scan(&role)
 	return group, inviteAuthority(c, role, err)
+}
+
+func lockRegisteredActor(c *gin.Context, ctx context.Context, tx *sql.Tx, actor string) bool {
+	var completed bool
+	err := tx.QueryRowContext(ctx, `SELECT profile_completed_at IS NOT NULL FROM public.users
+		WHERE id=$1 AND auth_id=$2 AND participant_kind='registered' FOR SHARE`, actor, auth.From(c).Subject).Scan(&completed)
+	switch {
+	case errors.Is(err, sql.ErrNoRows):
+		httpx.Error(c, 403, "PROFILE_REQUIRED", "本人情報を取得してください", nil)
+		return false
+	case err != nil:
+		httpx.Unavailable(c)
+		return false
+	case !completed:
+		httpx.Error(c, 403, "PROFILE_INCOMPLETE", "表示名を設定してください", nil)
+		return false
+	}
+	return true
 }
 
 func inviteAuthority(c *gin.Context, role string, err error) bool {

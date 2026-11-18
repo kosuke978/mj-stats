@@ -2,6 +2,21 @@
 
 Step 1は完了承認済み、2-1はPR #9でマージ済み。PR #10の同じブランチで2-2のDB基盤に続いて2-3のリーグ認可・参照・履歴切替、2-4のリーグ作成、2-5の招待管理を実装した。現在の対局APIと画面は以下の2-3節を正本とする。Step 2全体は途中。
 
+## 2-6のリーグ検索・参加API
+
+すべて有効セッションと表示名設定済みの登録者を要求する。最小リーグ情報は `{id,name,group_number}`。プレビューと参加のコードはJSON本文に入れる。
+
+| 操作 | 入力 | 成功応答 |
+| --- | --- | --- |
+| GET `/api/leagues/search` | `q` 必須、`limit,cursor` 任意 | 200 `{leagues,next_cursor}`。掲載済みのみ |
+| POST `/api/leagues/resolve` | `{group_number}` | 200 `{league}`。非掲載も可、未発見は404 `NOT_FOUND` |
+| POST `/api/leagues/join-preview` | `{group_number,code}` | 200 `{league,expires_at}`。所属変更なし |
+| POST `/api/leagues/{league_id}/join` | `{code,client_request_id}` | 200 `{membership}`。本人の `league_id,user_id,kind,role,status,version` |
+
+検索は前後空白を除き、NFKC・小文字化した2〜100コードポイントの部分一致。%と_は文字として扱う。カーソルは本人・正規化後の検索語・名前とIDの順序に結び付け、limitは既定20、1〜100。番号はASCII数字12桁で先頭ゼロを保持し、表示用ハイフンとASCII空白を除く。
+
+コードが無効・期限切れ・失効、または照合対象が存在しなければ404 `INVALID_INVITE`。プレビューの結果があっても参加時に再照合する。新規・脱退・除名後はmember、既存の有効所属はroleと版を維持する。同じ本人・操作ID・リーグ・正規化したコードの再送は元の操作を二度適用せず現在の所属を返す。現在の状態が終了済みならそのまま返す。同じ操作IDでリーグやコードが違えば409 `IDEMPOTENCY_CONFLICT`。試行制限はプレビューと参加で共通であり、再送にも適用する。
+
 ## 2-5の招待管理API
 
 対象リーグの `active/registered` 所属が `owner` または `admin` の名前設定済み本人が使える。以下のパスは `/api/leagues/{league_id}` 配下。query項目は受け付けない。
@@ -16,7 +31,7 @@ Step 1は完了承認済み、2-1はPR #9でマージ済み。PR #10の同じブ
 
 変更の操作IDはUUID。本人・操作種別・IDをキーに、認可の再確認後、版を照合する前に再送を判定する。対象と内容が同じ再送は元の招待の現在の状態を返す。元が期限切れ・失効済みなら資格情報のフィールドは省略される。別リーグ・別対象・版違いなど、同じ操作IDで内容を変えると409 `IDEMPOTENCY_CONFLICT`。新しい操作IDで古い版を指定した失効は409 `VERSION_CONFLICT`、失効済みの現在版を指定した新規失効は409 `STATE_CONFLICT`。
 
-未認証401、本人情報なし・名前未設定403、未所属または存在しないリーグ403 `LEAGUE_ACCESS_DENIED`、有効memberは403 `FORBIDDEN`。運営者の対象リーグに招待IDがなければ404 `NOT_FOUND`。不正な入力は共通エラーに従い、未設定・鍵不一致・DB障害は503 `TEMPORARILY_UNAVAILABLE`。参加・再参加・照合・試行制限は2-6、Web接続は2-7。設定と適用は [運用手順](setup-and-operations.md#step-2--2-5のローカル適用と招待鍵) を参照する。
+未認証401、本人情報なし・名前未設定403、未所属または存在しないリーグ403 `LEAGUE_ACCESS_DENIED`、有効memberは403 `FORBIDDEN`。運営者の対象リーグに招待IDがなければ404 `NOT_FOUND`。不正な入力は共通エラーに従い、未設定・鍵不一致・DB障害は503 `TEMPORARILY_UNAVAILABLE`。参加・再参加・照合・試行制限は上記2-6の契約を使う。Web接続は2-7。設定と適用は [運用手順](setup-and-operations.md#step-2--2-5のローカル適用と招待鍵) を参照する。
 
 ## 2-4のリーグ作成API
 

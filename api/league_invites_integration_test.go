@@ -38,7 +38,7 @@ func testLeagueInvites(t *testing.T, ctx context.Context, db, admin *sql.DB, ver
 		return c
 	}
 	makeCall := func(config *invites.Config) apiCall {
-		handler := router(db, verifier, []string{origin}, config)
+		handler := router(db, verifier, []string{origin}, config, nil, nil)
 		return func(method, path, token, body string) (int, map[string]any) {
 			req := httptest.NewRequestWithContext(ctx, method, path, strings.NewReader(body))
 			req.Host = "untrusted-host.invalid"

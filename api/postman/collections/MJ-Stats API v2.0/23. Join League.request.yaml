@@ -1,0 +1,12 @@
+$kind: http-request
+description: "明示した参加操作。再送は同じ操作IDを使う。"
+url: "{{base_url}}/api/leagues/{{league_id}}/join"
+method: POST
+headers:
+  Authorization: "Bearer {{access_token}}"
+  Content-Type: application/json
+body:
+  type: json
+  content: |
+    {"code":"{{invite_code}}","client_request_id":"{{client_request_id}}"}
+order: 24000

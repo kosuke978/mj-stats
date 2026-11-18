@@ -1,7 +1,7 @@
 {
   "info": {
     "name": "MJ-Stats API v2.0",
-    "description": "2-5: 設定済みBearerでリーグ作成・参照、owner/adminの招待管理。旧対局計算・保存は停止中。",
+    "description": "Step 2のリーグ作成・参照、招待管理、検索・参加。旧対局計算・保存は停止中。",
     "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
   },
   "item": [
@@ -306,6 +306,88 @@
         "body": {
           "mode": "raw",
           "raw": "{\n  \"client_request_id\": \"{{client_request_id}}\",\n  \"version\": \"{{invite_version}}\"\n}",
+          "options": {
+            "raw": {
+              "language": "json"
+            }
+          }
+        }
+      },
+      "response": []
+    },
+    {
+      "name": "20. Search Leagues",
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": "{{base_url}}/api/leagues/search?q={{search_q}}&limit=20",
+        "description": "掲載リーグだけを最小情報で返す。"
+      },
+      "response": []
+    },
+    {
+      "name": "21. Resolve League Number",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "url": "{{base_url}}/api/leagues/resolve",
+        "description": "番号で最小リーグ情報を取得。非掲載も可。",
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"group_number\": \"{{group_number}}\"\n}",
+          "options": {
+            "raw": {
+              "language": "json"
+            }
+          }
+        }
+      },
+      "response": []
+    },
+    {
+      "name": "22. Preview Join",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "url": "{{base_url}}/api/leagues/join-preview",
+        "description": "招待確認だけを行い、所属は変更しない。",
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"group_number\": \"{{group_number}}\",\n  \"code\": \"{{invite_code}}\"\n}",
+          "options": {
+            "raw": {
+              "language": "json"
+            }
+          }
+        }
+      },
+      "response": []
+    },
+    {
+      "name": "23. Join League",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "url": "{{base_url}}/api/leagues/{{league_id}}/join",
+        "description": "明示した参加操作。再送は同じ操作IDを使う。",
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"code\": \"{{invite_code}}\",\n  \"client_request_id\": \"{{client_request_id}}\"\n}",
           "options": {
             "raw": {
               "language": "json"

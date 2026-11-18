@@ -1,6 +1,6 @@
 # MJ-Stats Postman
 
-ローカルの2-5対応Goとmigrationを使用します。インポート対象は `export/MJ-Stats API v2.0.postman_collection.json` と `export/MJ-Stats.local.postman_environment.json` です。
+ローカルのStep 2対応Goとmigrationを使用します。インポート対象は `export/MJ-Stats API v2.0.postman_collection.json` と `export/MJ-Stats.local.postman_environment.json` です。
 
 1. `base_url` を専用ローカルGoに合わせ、同じローカルAuthの本人access tokenを `access_token` のローカル値へ設定します。
 2. Health → Get Me → 必要なら Set My Display Name → My Leagues の順で確認します。My Leaguesで返った有効所属のIDを `league_id` に指定します。
@@ -18,4 +18,6 @@
 2. Issue Inviteは新しい `client_request_id` で201、同じIDの再送は200。別のIDで発行すると以前の招待は失効します。
 3. Revoke Inviteは `invite_id` と `invite_version` に応答のIDと版を指定し、新しい操作IDで実行します。200で失効し、同じ操作IDと版の再送も200。別操作で古い版を送ると409です。
 
-コードやリンクはPostmanの変数、保存済みレスポンス、共有履歴、exportに入れません。
+コードやリンクは共有変数、保存済みレスポンス、共有履歴、exportに入れません。
+
+Search Leaguesは掲載名だけを検索し、Resolve League Numberは非掲載の番号も解決します。Preview Joinは所属を作らず、Join Leagueで明示的に参加します。隔離環境で確認するときだけ `invite_code` の空のsecret変数にローカル値を一時設定し、確認後に消去します。無効招待は404、試行制限は429とRetry-Afterです。

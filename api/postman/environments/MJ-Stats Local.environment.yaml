@@ -19,3 +19,13 @@ values:
   - key: invite_version
     value: ""
     enabled: true
+  - key: search_q
+    value: ""
+    enabled: true
+  - key: group_number
+    value: ""
+    enabled: true
+  - key: invite_code
+    value: ""
+    enabled: true
+    type: secret

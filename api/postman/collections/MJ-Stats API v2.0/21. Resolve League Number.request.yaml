@@ -1,0 +1,12 @@
+$kind: http-request
+description: "番号で最小リーグ情報を取得。非掲載も可。"
+url: "{{base_url}}/api/leagues/resolve"
+method: POST
+headers:
+  Authorization: "Bearer {{access_token}}"
+  Content-Type: application/json
+body:
+  type: json
+  content: |
+    {"group_number":"{{group_number}}"}
+order: 22000

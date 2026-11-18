@@ -73,7 +73,7 @@ func TestStep1RealDBAuth(t *testing.T) {
 	if e != nil {
 		t.Fatal(e)
 	}
-	api := httptest.NewServer(router(db, verifier, []string{"http://localhost:3000"}, nil))
+	api := httptest.NewServer(router(db, verifier, []string{"http://localhost:3000"}, nil, nil, nil))
 	defer api.Close()
 	ctx, cancel := context.WithTimeout(context.Background(), 90*time.Second)
 	defer cancel()
@@ -334,6 +334,9 @@ func TestStep1RealDBAuth(t *testing.T) {
 	t.Run("LeagueInvites", func(t *testing.T) {
 		testLeagueInvites(t, ctx, db, admin, verifier, a.Access, other.Access, participant, sameName["id"].(string))
 	})
+	t.Run("LeagueParticipation", func(t *testing.T) {
+		testLeagueParticipation(t, ctx, db, admin, verifier, a.Access, other.Access, participant, sameName["id"].(string))
+	})
 	t.Run("LeagueReferences", func(t *testing.T) {
 		testLeagueReferences(t, ctx, admin, call, a.Access, other.Access, participant, sameName["id"].(string))
 	})
@@ -538,7 +541,7 @@ func TestStep1RealDBAuth(t *testing.T) {
 	// Confirm failures remain service errors with no SQL or credential disclosure.
 	adminDown, _ := sql.Open("postgres", "postgres://unused:unused@127.0.0.1:1/postgres?sslmode=disable&connect_timeout=1")
 	defer adminDown.Close()
-	brokenAPI := httptest.NewServer(router(adminDown, verifier, []string{"http://localhost:3000"}, nil))
+	brokenAPI := httptest.NewServer(router(adminDown, verifier, []string{"http://localhost:3000"}, nil, nil, nil))
 	defer brokenAPI.Close()
 	req, _ := http.NewRequestWithContext(ctx, "GET", brokenAPI.URL+"/api/health", nil)
 	res, err := httpClient.Do(req)

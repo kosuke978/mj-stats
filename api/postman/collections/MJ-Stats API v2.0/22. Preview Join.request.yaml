@@ -1,0 +1,12 @@
+$kind: http-request
+description: "招待確認だけを行い、所属は変更しない。"
+url: "{{base_url}}/api/leagues/join-preview"
+method: POST
+headers:
+  Authorization: "Bearer {{access_token}}"
+  Content-Type: application/json
+body:
+  type: json
+  content: |
+    {"group_number":"{{group_number}}","code":"{{invite_code}}"}
+order: 23000
