@@ -24,6 +24,7 @@ func router(database *sql.DB, verifier *auth.Verifier, origins []string) *gin.En
 	guard := &auth.Guard{DB: database, Verifier: verifier}
 	matches := controllers.NewMatchController(database)
 	matches.Auth = guard
+	leagues := &controllers.LeagueController{DB: database}
 	users := &controllers.UserController{Auth: guard}
 	r := gin.New()
 	// Default recovery/logger can expose request headers and panic/SQL details.
@@ -47,6 +48,11 @@ func router(database *sql.DB, verifier *auth.Verifier, origins []string) *gin.En
 	normal.POST("/matches/calculate", matches.Calculate)
 	normal.POST("/matches", matches.CreateMatch)
 	normal.GET("/matches", matches.GetMatches)
+	normal.GET("/leagues", leagues.List)
+	normal.GET("/leagues/:league_id", leagues.Detail())
+	for _, list := range []string{"participants", "members", "rules", "seasons"} {
+		normal.GET("/leagues/:league_id/"+list, leagues.Reference(list))
+	}
 	return r
 }
 

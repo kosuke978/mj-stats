@@ -402,3 +402,16 @@ localログアウトはSupabaseへlocalを明示し、成功後に同じセッ�
 | 項目削除・改名・必須化・エラー形式変更 | 旧クライアントの解釈・送信が成立しない可能性がある | 利用者一覧、適用順、互換期間または同時反映、対象Qケース |
 
 PRで影響する利用側を列挙し、API/Web/DBの適用順と旧版との同時稼働の可否を説明する。互換性のある変更と、同時更新が必要な変更を同じ手順で扱わない。バージョン付きAPIや互換期間を導入するかは、実際の外部クライアント・運用環境に応じて判断する。
+
+## 2-3の参照API実装
+
+| GET | 応答 | 範囲 |
+| --- | --- | --- |
+| `/api/leagues` | `{leagues:[{id,name,group_number,my_role}]}` | 本人の有効所属 |
+| `/api/leagues/{league_id}` | `{league:{id,name,group_number,my_role}}` | 対象リーグでの本人role |
+| 同 `/participants` | `{participants:[{id,name,kind,version}],next_cursor}` | 有効な登録参加者・ゲスト |
+| 同 `/members` | `{members:[{user_id,name,kind,role,status,version}],next_cursor}` | active/left/removedの所属。legacyは除外 |
+| 同 `/rules` | `{rules:[{id,name,default_points,return_points,uma,calculation_version,available,version}],next_cursor}` | `available=true` が既定。`false`、`all` も指定可。legacy版は除外 |
+| 同 `/seasons` | `{seasons:[{id,name,start_date,end_date,version}],next_cursor}` | UUID。日付はYYYY-MM-DDまたはNULL |
+
+JWT・有効セッション・設定済み本人を確認し、その永続IDと指定リーグのactiveなregistered所属を照合する。存在しないUUIDと非所属は同じ403。構文不正なUUID・許可外、重複または空の一覧queryは400。ページは既定20、1〜100。参加者・所属は名前/ID、rule/seasonは作成日時（NULL末尾）/IDの昇順。cursorを本人・リーグ・一覧種類・絞り込みに結び付ける。ページングのcursorは認可の代わりにしない。

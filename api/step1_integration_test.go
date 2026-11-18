@@ -320,6 +320,9 @@ func TestStep1RealDBAuth(t *testing.T) {
 		t.Fatal("same name must preserve separate identities")
 	}
 	t.Log("Q-08 PASS: two real Auth users may choose the same name and keep distinct participant IDs")
+	t.Run("LeagueReferences", func(t *testing.T) {
+		testLeagueReferences(t, ctx, admin, call, a.Access, other.Access, participant, sameName["id"].(string))
+	})
 
 	// The legacy request and point format remain unchanged; exercise tx rollback.
 	seed, _ := os.ReadFile("db/seed.sql")
