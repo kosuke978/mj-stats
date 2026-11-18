@@ -121,7 +121,9 @@ func (mc *MatchController) GetMatches(c *gin.Context) {
 		return
 	}
 	if hasMatchDate {
-		matchDateExpr = "match_date"
+		// Keep the legacy response timestamp for records with unknown play time.
+		// The database retains NULL so the scoped API can expose the distinction.
+		matchDateExpr = "COALESCE(match_date, created_at)"
 	}
 
 	guestNameExpr := "CAST(NULL AS text)"

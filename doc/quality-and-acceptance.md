@@ -2,7 +2,7 @@
 
 この文書は「どの証拠があれば完成と言えるか」を定める。要求の正本は [requirements.md](requirements.md)、現行の挙動は [features-api.md](features-api.md)、設計条件は [architecture.md](architecture.md)、工程とDoDは [product-roadmap.md](product-roadmap.md) を参照する。
 
-Qケースの一覧は検証設計であり、全件を実行済みとは扱わない。設計整備時の読み取り調査に加え、Step 1作業ブランチで専用ローカルDB/Auth/メールとChromium、管理QAの実DB/Authと開発者のメール手動操作による実行結果を取得した。対象ケース・証跡・未実施は [Step 1記録](#step-1実装ブランチの検証記録2026-11-17) と [2-1記録](#step-2--2-1の検証記録2026-11-18) に分ける。将来Stepのケースを記載しても、その実装着手を承認したことにはならない。
+Qケースの一覧は検証設計であり、全件を実行済みとは扱わない。設計整備時の読み取り調査に加え、Step 1作業ブランチで専用ローカルDB/Auth/メールとChromium、管理QAの実DB/Authと開発者のメール手動操作による実行結果を取得した。対象ケース・証跡・未実施は [Step 1記録](#step-1実装ブランチの検証記録2026-11-17) 、[2-1記録](#step-2--2-1の検証記録2026-11-18)、[2-2記録](#step-2--2-2の検証記録) に分ける。将来Stepのケースを記載しても、その実装着手を承認したことにはならない。
 
 ## 現在の検証基盤
 
@@ -442,3 +442,15 @@ Q-25の今回実行した範囲：
 対象はルール・シーズン・対局帰属のDB基盤。関連はR-MATCH-02/03、R-SEASON-01、R-HISTORY-01、D-06/07/16/17。2-1はPR #9でマージ済み（起点 `bda0dad`）。上記2-1の実行結果は当時の記録。
 
 Q-16/Q-25のルール・シーズン部分は、専用ローカル内の使い捨てDBで合成・保存済み実コピーともPASS。全5本の空構築と増分の構造が一致し、旧全列、2-1の通常・legacy所属、旧ルールの不正条件・旧期間NULL/逆転、numeric値を保全。通常ルールの別IDによる新版作成、S/RのNULL・100点単位・範囲、ウマの順序/合計、旧条件UPDATE拒否、利用停止後の参照、UUID/開いた期間、逆転拒否、列権限と公開ロール拒否を実行した。2-1の72件の制約試験とowner競合試験もPASS。証跡は `.local/step2-2-rule-season-{synthetic,actual}.log`。
+
+| Q-16/Q-25ほかの実行範囲 | 期待値と結果 | 証跡（Git管理外） |
+| --- | --- | --- |
+| `npm run test:migrations`、同コマンドの `-- --snapshot .local/legacy-actual-20261117.json` | PASS。空DBへ全6本、旧コピーへ増分適用。列、制約、index、RLS、policy、triggerが一致。5参加者・1リーグ・5所属・1season・2rule・19対局・76結果の全旧列を保持。通常/legacyを含む2-1適用済み合成行も比較し、旧NULL・逆転期間・負のnumeric値・ID/参照を保全。2-1の72件とowner競合も再PASS | `.local/step2-2-migrations-{synthetic,actual}.log` |
+| explicit/NULL seasonと同一リーグ参照 | PASS。日本時間月初と対応するUTCが同じtimestamptz。期間内でもseason未指定はNULL。通常rule/season/記録者・結果の所属・対局が同一リーグなら成功し、混在は拒否。league_idがNULLの結果もapp対局へ参照できない | 上記2ログ |
+| 削除・rollback・段階的な権限 | PASS。参照中rule/season・結果付き対局と所属の削除を拒否。結果の途中失敗時に対局と先行結果をrollback。Goの旧保存/履歴はlegacyのみ、通常ruleを使った旧保存とapp書込みを拒否し、app行は不可視。公開ロールの読書き拒否 | 上記2ログ |
+| 再適用と履歴 | PASS。隔離試験でraw再適用を拒否し、履歴の欠落/本文差分/未知版を検知。専用ローカルへ2本だけ順に適用し、旧列の7表fingerprintが同値。実CLI再実行は適用0件、履歴は6版 | `.local/step2-2-local-{migration-up,migration-repeat,versions}.log`、`.local/step2-2-local-{before,after}.sha` |
+| Go単体・vet、実Auth付きGo回帰 | PASS。新DBで旧保存201、履歴200。保存行のmatch_dateとleague_idはNULL、JSONのmatch_dateは記録日時と一致、4結果を返す。JWT/セッション、並行me、名前、旧計算/保存rollback、D-41、localログアウト、Auth削除時のID・種別・owner/所属/結果参照保全を再確認 | `.local/step2-2-{go-test,go-vet,auth-regression}.log` |
+
+適用・書込みは専用ローカル `mj-stats-step1`（PostgreSQL 17.12）と内部の使い捨てDBだけ。元共有DB・既存管理QA・本番への適用、元コピーの再取得は未実施。既存.env・署名鍵・.localの既存証跡と退避設定を保持した。
+
+未実施はGoのリーグ認可・履歴制限、利用停止/保存の競合、指定シーズンの期間内保存検証、画面のタイムゾーン表示、ルールを読む計算と正確値保存、再送/取消/変更記録。上表のDB参照試験を各APIの合格に算入しない。Webと管理QAの受入は再実行していない。Safari・スマホ実機・実Auth鍵ローテーション、本番SMTP・復旧等の未確認も継続する。Step 2全体は途中。

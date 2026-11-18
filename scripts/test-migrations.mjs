@@ -4,6 +4,7 @@ import { createHash } from 'node:crypto'
 import { readFileSync, readdirSync } from 'node:fs'
 import { testLeagueFoundation, testLeagueMigration } from './test-league-foundation.mjs'
 import { fixtureID, leagueA, normalLeagues, ownerA, testRuleSeasonFoundation } from './test-rule-season-foundation.mjs'
+import { testMatchAttribution } from './test-match-attribution.mjs'
 const container = 'supabase_db_mj-stats-step1'
 const info = JSON.parse(execFileSync('docker', ['inspect', container], { encoding: 'utf8' }))[0]
 if (info.Config.Labels['com.supabase.cli.project'] !== 'mj-stats-step1' || !info.NetworkSettings.Ports['5432/tcp'].some(p => p.HostPort === '55422')) throw new Error('Refusing unknown environment')
@@ -179,6 +180,8 @@ try {
   stage = 'rule/season constraints and permissions'
   const fullRowQuery = projectionQuery(JSON.parse(sql(queries.columns)))
   testRuleSeasonFoundation(sql, fullRowQuery)
+  stage = 'match attribution constraints and permissions'
+  testMatchAttribution(sql, fullRowQuery)
   if (!snapshot) console.log('Actual-copy acceptance is separate: rerun with --snapshot <read-only-export.json>.')
 } catch (error) {
   // SQLSTATE only: never emit row values, query text or connection details.

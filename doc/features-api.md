@@ -1,6 +1,6 @@
 # 実装済み機能とAPI契約
 
-前半はStep 1作業ブランチの現行実装。認証・本人情報以外の対局契約は基準コミット `12760ca` を維持する。後半はPhase 2.5全体の目標。Step 1は完了承認・PR #8マージ済み。Step 2は着手済みで、2-1のリーグ/所属DB基盤のみ追加した。API/画面は今回変更せず、リーグAPI・所属認可・履歴制限は未実装。Step 1の実行結果・未実施は [品質・受入](quality-and-acceptance.md#step-1実装ブランチの検証記録2026-11-17) を参照する。要求は [requirements.md](requirements.md)、工程は [product-roadmap.md](product-roadmap.md)、設計条件は [architecture.md](architecture.md) を参照する。
+前半は現行実装、後半はPhase 2.5全体の目標。Step 1は完了承認済み、2-1はPR #9でマージ済み。2-2でルール・シーズン・対局帰属のDB基盤を追加した。旧保存のbody、数値point、固定ルール計算を維持する。旧履歴はlegacy行を返し、`match_date`がNULLなら`created_at`を旧JSONの`match_date`に使う。DBの実対局日時はNULLのまま。アプリ起源の対局は旧履歴から隔離し、2-3でリーグ認可付き履歴へ切り替える。検証は [品質文書](quality-and-acceptance.md)、工程は [ロードマップ](product-roadmap.md) を参照する。
 
 ## 画面と利用フロー
 

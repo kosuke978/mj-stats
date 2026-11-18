@@ -86,7 +86,7 @@ node scripts/run-local.mjs web-start
 
 ### migrationとAuth権限の適用
 
-- 空の専用スタック：CLI start/resetが `20261117000000_baseline.sql` → `20261117001000_auth_profile.sql` → `20261117002000_managed_auth_validation.sql` → `20261118000000_league_membership_foundation.sql` を通常postgresとして適用する。D-40の旧 `supabase/permissions/step1_auth.sql` は適用しない。
+- 空の専用スタック：CLI start/resetが [migrations](../supabase/migrations) の6本を時刻順に通常postgresとして適用する。D-40の旧 `supabase/permissions/step1_auth.sql` は適用しない。
 - baselineは観測済み7表39列20制約9 indexを再現する。既存DBへCREATE TABLEを再実行しない。既存環境の正確な列・制約・index・RLS・policy・triggerを照合した後だけbaselineを履歴へ記録し、増分を適用する。再開後の実コピーで一致と増分保全を確認した。元の共有DBには適用しない。
 - `node scripts/test-migrations.mjs` は識別済みコンテナ内の使い捨てDBで、Authメタデータ契約と合成旧データを用意して増分と再適用拒否を確認する。`--snapshot .local/legacy-actual-20261117.json` を指定すると実コピーの構造を照合し、全元列値・参照を比較する。元のスナップショットは `api` で `go run ./cmd/legacy-snapshot ../.local/legacy-actual-20261117.json` によりREAD ONLY取得する。生成した一時DBだけをfinallyで削除する。
 - D-41ではpostgres所有の非公開viewを通じて限定7列と行ロックを委譲する。関数所有はNOLOGIN/NOBYPASSRLS、viewのSELECT/UPDATE(id)だけでAuthへの直接権限は持たない。viewへの実UPDATEはtriggerで拒否する。AuthのRLS/policyを変更せず、所有者やsupabase_adminの追加作業を要求しない。
@@ -158,6 +158,12 @@ migration試験は環境を識別してから使い捨てDBを作る。空DB全�
 今回の `local:prepare` 前の `.local/api.env`・`web.env`・`acceptance.json` は `.local/step2-1-original-local-config/` に保存した。Step 1の証跡・スナップショット・署名鍵、既存api/.env・web/.env.localを保持する。管理QA試験のfixtureもkindを明示する形に更新したが、**2-1未適用の既存QAでその試験を再実行しない**。後続の適用承認とmigration後に行う。
 
 戻す必要がある場合も、既存行を削除して再適合させず、書込みを止めて対象・直前版・保存コピーを確認する。今回の適用先は専用ローカルだけ。共有/QAへ逆DDLを適用しない。最新の結果と未実施は[2-1の検証記録](quality-and-acceptance.md#step-2--2-1の検証記録2026-11-18)を参照する。
+
+## Step 2 / 2-2のローカル適用と検証
+
+専用ローカルでは既存4本を確認し、`20261118001000_rule_season_foundation.sql` → `20261118002000_match_attribution.sql` の順に適用する。上記と同じローカル識別チェック、`npm run supabase -- migration up`、合成/保存済み実コピーの `npm run test:migrations`、Goの実Auth回帰を使う。旧コピーの取得済みファイルは読み取り専用で使う。2-1未適用の既存管理QA・元共有DB・本番への適用は後続の承認範囲。
+
+2本目の適用後はNULLの対局日時を読める互換修正入りGoで起動する。旧履歴JSONは既知の記録日時で従来表示を維持し、DBへ日時を書き戻さない。既存のrule_idやcreated_at自体がNULLの行を旧APIで返す契約は今回変えていない。旧書込みはlegacy領域だけに残り、通常対局は後続の対応が揃ってから書き始める。2-3/Step 3の切替順は [設計](architecture.md#step-2--2-2の対局結果の帰属)、検証結果は [品質文書](quality-and-acceptance.md#step-2--2-2の検証記録) を参照する。
 
 ## 起動
 

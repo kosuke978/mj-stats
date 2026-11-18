@@ -349,11 +349,44 @@ func TestStep1RealDBAuth(t *testing.T) {
 	if before != fingerprint() {
 		t.Fatal("partial match saved")
 	}
-	if code, _ := call("POST", "/api/matches", a.Access, paths[2].body); code != 201 {
+	code, saved := call("POST", "/api/matches", a.Access, paths[2].body)
+	matchID, _ := saved["match_id"].(string)
+	if code != 201 || matchID == "" {
 		t.Fatalf("legacy save=%d", code)
 	}
-	if code, _ := call("GET", "/api/matches", a.Access, ""); code != 200 {
+	code, legacyHistory := call("GET", "/api/matches", a.Access, "")
+	if code != 200 {
 		t.Fatal("history")
+	}
+	items, _ := legacyHistory["matches"].([]any)
+	var found bool
+	for _, item := range items {
+		match, _ := item.(map[string]any)
+		if match["id"] == matchID {
+			played, _ := match["match_date"].(string)
+			created, _ := match["created_at"].(string)
+			results, _ := match["results"].([]any)
+			found = played != "" && played == created && len(results) == 4
+			break
+		}
+	}
+	if !found {
+		t.Fatal("legacy history must return the recorded timestamp and four results")
+	}
+	var hasMatchDate bool
+	if err := admin.QueryRowContext(ctx, `SELECT EXISTS (
+		SELECT 1 FROM information_schema.columns
+		WHERE table_schema='public' AND table_name='matches' AND column_name='match_date'
+	)`).Scan(&hasMatchDate); err != nil {
+		t.Fatal("check match_date column")
+	}
+	if hasMatchDate {
+		var unknown, legacy bool
+		if err := admin.QueryRowContext(ctx, `SELECT match_date IS NULL, data_origin='legacy' AND league_id IS NULL
+			FROM public.matches WHERE id=$1`, matchID).Scan(&unknown, &legacy); err != nil || !unknown || !legacy {
+			t.Fatal("legacy save must keep play time and league unknown in storage")
+		}
+		t.Log("Q-22/Q-25 2-2 PASS: NULL match_date stays NULL in DB; legacy history returns created_at")
 	}
 	t.Log("Q-01/Q-05/Q-13 Step 1 regression PASS: legacy calculation/save/history and rollback")
 
