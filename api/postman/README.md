@@ -1,6 +1,6 @@
 # MJ-Stats Postman
 
-ローカルの2-4対応Goとmigrationを使用します。インポート対象は `export/MJ-Stats API v2.0.postman_collection.json` と `export/MJ-Stats.local.postman_environment.json` です。
+ローカルの2-5対応Goとmigrationを使用します。インポート対象は `export/MJ-Stats API v2.0.postman_collection.json` と `export/MJ-Stats.local.postman_environment.json` です。
 
 1. `base_url` を専用ローカルGoに合わせ、同じローカルAuthの本人access tokenを `access_token` のローカル値へ設定します。
 2. Health → Get Me → 必要なら Set My Display Name → My Leagues の順で確認します。My Leaguesで返った有効所属のIDを `league_id` に指定します。
@@ -11,3 +11,11 @@
 トークンを共有・exportへ含めません。実行範囲と証跡は [品質・受入](../../doc/quality-and-acceptance.md) を参照してください。
 
 リーグの作成を確認する場合は、名前設定後に `client_request_id` に新しいUUIDを設定し、Create Leagueを実行します。初回は201、同じ本人・UUID・リーグ名で再送すると200で同じリーグと初期ルールが返ります。同じUUIDで名前だけ変えると409 `IDEMPOTENCY_CONFLICT` です。別のリーグを作るときは新しいUUIDを使います。返された `league.id` を `league_id` に入れると、My Leagues・League・Rulesで初期状態を確認できます。
+
+招待管理は[招待鍵を設定した専用ローカルGo](../../doc/setup-and-operations.md#step-2--2-5のローカル適用と招待鍵)で確認します。対象リーグのownerまたはadminのBearerを使用します。
+
+1. Current Inviteは200。未発行・期限切れ・失効後は `{"invite":null}`。
+2. Issue Inviteは新しい `client_request_id` で201、同じIDの再送は200。別のIDで発行すると以前の招待は失効します。
+3. Revoke Inviteは `invite_id` と `invite_version` に応答のIDと版を指定し、新しい操作IDで実行します。200で失効し、同じ操作IDと版の再送も200。別操作で古い版を送ると409です。
+
+コードやリンクはPostmanの変数、保存済みレスポンス、共有履歴、exportに入れません。

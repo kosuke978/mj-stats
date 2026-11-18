@@ -1,7 +1,7 @@
 {
   "info": {
     "name": "MJ-Stats API v2.0",
-    "description": "2-4: 設定済みBearerでリーグ作成と所属リーグの参照。旧対局計算・保存は停止中。",
+    "description": "2-5: 設定済みBearerでリーグ作成・参照、owner/adminの招待管理。旧対局計算・保存は停止中。",
     "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
   },
   "item": [
@@ -248,6 +248,64 @@
         "body": {
           "mode": "raw",
           "raw": "{\n  \"name\": \"Postmanリーグ\",\n  \"client_request_id\": \"{{client_request_id}}\"\n}",
+          "options": {
+            "raw": {
+              "language": "json"
+            }
+          }
+        }
+      },
+      "response": []
+    },
+    {
+      "name": "17. Current Invite",
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": "{{base_url}}/api/leagues/{{league_id}}/invites/current",
+        "description": "owner/admin向け。200。未発行・期限切れ・失効時はinviteがnull。"
+      },
+      "response": []
+    },
+    {
+      "name": "18. Issue Invite",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "url": "{{base_url}}/api/leagues/{{league_id}}/invites",
+        "description": "owner/admin向け。初回201、同じ操作IDでの再送は200。発行すると以前の未失効招待は失効。",
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"client_request_id\": \"{{client_request_id}}\"\n}",
+          "options": {
+            "raw": {
+              "language": "json"
+            }
+          }
+        }
+      },
+      "response": []
+    },
+    {
+      "name": "19. Revoke Invite",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "url": "{{base_url}}/api/leagues/{{league_id}}/invites/{{invite_id}}/revoke",
+        "description": "owner/admin向け。失効と同じ操作IDの再送は200。versionは文字列。",
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"client_request_id\": \"{{client_request_id}}\",\n  \"version\": \"{{invite_version}}\"\n}",
           "options": {
             "raw": {
               "language": "json"

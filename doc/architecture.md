@@ -97,6 +97,18 @@ Goのサービスロールはトランザクション内で認証済み本人の
 
 番号は暗号学的乱数を12桁に整形する。番号の衝突だけを検知して最大5回再生成する。リーグ、owner所属、初期ルール、イベントを同じトランザクションで確定し、途中で失敗したら全体を戻す。再送はイベントの元IDを使い、有効所属の読取り境界を通して現在値を返す。
 
+## Step 2 / 2-5の招待管理
+
+`20261118005000_league_invites.sql` で `league_invites` を追加した。1リーグ1件の未失効を部分UNIQUEで保証する。期限切れの行も再発行時の失効対象とし、版を1増やす。発行時刻・期限はUTCの絶対時刻で168時間差。招待と発行者、リーグの参照はRESTRICT。サービスロールの変更権限は限定INSERT、失効時刻と版のUPDATE。本人と対象リーグのトランザクションscope、現行の有効な登録運営者所属をRLSでも照合する。
+
+`league_events` に `invite.issue / invite.revoke` の本人・対象リーグ限定の参照/追記を追加した。対象招待を生成列と複合FKで固定し、記録は操作種別・対象・結果版・入力ハッシュ等の列を使う。招待イベントの `after` は空オブジェクト。別リーグで同じ本人・操作種別・操作IDが使われたかは限定関数で真偽値を照合する。既存の作成イベントの参照と追記の条件は維持する。
+
+招待の変更はD-41のAuth再確認後、対象リーグの行を `FOR UPDATE`、本人行とその所属を共有ロックし権限を再照合する。続いて本人・操作種別・操作IDのアドバイザリロックを取得する。同じ操作の再送はREAD COMMITTEDで確定したイベントから解決する。旧招待の失効、新規発行、操作記録は一括で確定する。認可・照合・状態変更はGoを正本とする。
+
+2-6の参加ではAuth再確認 → 同じ対象リーグの行を `FOR UPDATE` → 本人行・所属の照合 → 招待の照合と所属の変更、の順を共有する。ロック取得後のDB時刻で `revoked_at IS NULL AND expires_at > 時刻` を確認し、ロックを所属変更のcommitまで保持する。参加者向けには制約された照合方法と試行制限を追加し、運営者向けの再表示scopeを流用しない。
+
+参加入力ではASCIIの小文字を大文字にし、表示用ハイフンを除いた16桁をCrockfordの採用アルファベット `0123456789ABCDEFGHJKMNPQRSTVWXYZ` で検証する。そのASCII文字列のSHA-256を小文字hexに変換し、DBの `credential_hash` と定時間で照合する。表示用コードは `APP_ORIGIN` を基準に生成したリンクのfragmentへハイフンなしで含める。再表示は発行時の鍵版を使用し、保存したhashとの一致を確認する。
+
 ## 7つのコアテーブル
 
 以下は各テーブルの役割と現在のAPIとの接続状況。実DBの列・型・制約・RLSは後述の調査結果で確認済み。テーブルの存在と、リーグ等の機能をアプリから運用できることは区別する。
@@ -658,7 +670,7 @@ app起源の対局にはcommit時の遅延制約で4結果・100点単位・適�
 
 | 補助表 | 主な列・型 | 一意性・用途 |
 | --- | --- | --- |
-| league_invites | id/league_id/issued_by：UUID、expires_at/revoked_at：timestamptz（失効はNULL可）、key_version：整数、credential_hash：64桁hex、version：bigint | リーグごとの未失効招待を1件に限定。期限切れも再発行時に失効し、新招待を同一txで作る。発行から7日。秘密コードを検索・ログ・一般情報へ出さない |
+| league_invites | id/league_id/issued_by：UUID、issued_at/expires_at/revoked_at：timestamptz（失効はNULL可）、key_version：整数、credential_hash：64桁hex、version：bigint | リーグごとの未失効招待を1件に限定。期限切れも再発行時に失効し、新招待を同一txで作る。発行から7日。秘密コードを検索・ログ・一般情報へ出さない |
 | participant_links | id/league_id/guest_user_id/registered_user_id/requested_by：UUID、status：pending/active/rejected/revoked、同意/申請/承認/解除の主体・日時、version、理由 | 1原ゲストに有効対応は1件だけの部分UNIQUE。登録参加者への1段対応。原対局参照は変更せず、履歴に原IDと本人IDの両方を返す。status遷移と競合をGo/txで検証 |
 | owner_transfers | id/league_id/from_user_id/to_user_id：UUID、status：pending/accepted/cancelled/expired、expires_at/acted_at：timestamptz、version | 1リーグ1件のpending、発行から7日の技術期限。旧ownerの提案と指名本人の同意を別操作とし、実行時に両者の有効所属/roleを再確認する |
 | match_revisions | id/league_id/match_id/actor_id/client_request_id：UUID、version：bigint、operation：create/update/cancel、request_hash、reason、before/after：jsonb、created_at：timestamptz | UNIQUE(match_id,version)、UNIQUE(league_id,actor_id,operation,client_request_id)。訂正・取消を追記し、元値を消さない。新規作成の記録はreason不要で、訂正/取消は空白除去後1〜500文字の理由を要求 |

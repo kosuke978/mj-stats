@@ -1,6 +1,22 @@
 # 実装済み機能とAPI契約
 
-Step 1は完了承認済み、2-1はPR #9でマージ済み。PR #10の同じブランチで2-2のDB基盤に続いて2-3のリーグ認可・参照・履歴切替と、2-4のリーグ作成を実装した。現在の対局APIと画面は以下の2-3節を正本とする。Step 2全体は途中。
+Step 1は完了承認済み、2-1はPR #9でマージ済み。PR #10の同じブランチで2-2のDB基盤に続いて2-3のリーグ認可・参照・履歴切替、2-4のリーグ作成、2-5の招待管理を実装した。現在の対局APIと画面は以下の2-3節を正本とする。Step 2全体は途中。
+
+## 2-5の招待管理API
+
+対象リーグの `active/registered` 所属が `owner` または `admin` の名前設定済み本人が使える。以下のパスは `/api/leagues/{league_id}` 配下。query項目は受け付けない。
+
+| 操作 | JSON入力 | 成功応答 |
+| --- | --- | --- |
+| GET `/invites/current` | なし | 200 `{invite}`。未発行・期限切れ・失効後は `{"invite":null}` |
+| POST `/invites` | `{client_request_id}` | 新規201、再送200 `{invite}`。期限切れを含む旧未失効招待を同時に失効 |
+| POST `/invites/{id}/revoke` | `{client_request_id,version}` | 200 `{invite}`。期限切れでも未失効なら失効可 |
+
+`invite` は `id, league_id, issued_at, expires_at, revoked_at, version, status` を持つ。日時はUTC、未失効の `revoked_at` はNULL、versionは正の10進整数文字列。 `status` は `active / expired / revoked`。有効な招待だけに `code`（4桁区切り）と `join_url` を付ける。有効期間は発行から168時間で、期限と同じ時刻は期限切れ。応答は `Cache-Control: private, no-store`。発行・失効で既存所属は変わらない。
+
+変更の操作IDはUUID。本人・操作種別・IDをキーに、認可の再確認後、版を照合する前に再送を判定する。対象と内容が同じ再送は元の招待の現在の状態を返す。元が期限切れ・失効済みなら資格情報のフィールドは省略される。別リーグ・別対象・版違いなど、同じ操作IDで内容を変えると409 `IDEMPOTENCY_CONFLICT`。新しい操作IDで古い版を指定した失効は409 `VERSION_CONFLICT`、失効済みの現在版を指定した新規失効は409 `STATE_CONFLICT`。
+
+未認証401、本人情報なし・名前未設定403、未所属または存在しないリーグ403 `LEAGUE_ACCESS_DENIED`、有効memberは403 `FORBIDDEN`。運営者の対象リーグに招待IDがなければ404 `NOT_FOUND`。不正な入力は共通エラーに従い、未設定・鍵不一致・DB障害は503 `TEMPORARILY_UNAVAILABLE`。参加・再参加・照合・試行制限は2-6、Web接続は2-7。設定と適用は [運用手順](setup-and-operations.md#step-2--2-5のローカル適用と招待鍵) を参照する。
 
 ## 2-4のリーグ作成API
 
@@ -344,7 +360,7 @@ me以外の名前はゲスト1〜30、リーグ/ルール/シーズン1〜100コ
 | PATCH /members/{user_id} | owner、{role:"admin"または"member",version,client_request_id} | 200。対象は有効な登録者、現ownerの変更やbodyのowner指定は拒否 / Step 5 |
 | POST /members/{user_id}/remove | owner、または対象がmemberの場合だけadmin。{reason,version,client_request_id} | 200。登録者の所属をremovedにする。owner本人とguest/legacyは対象外 / Step 5 |
 | POST /leave | 所属、{client_request_id} | 200。本人をleftにし、ownerは409で引継ぎへ案内。原ID・成績は残す / Step 5 |
-| GET /invites/current、POST /invites、POST /invites/{id}/revoke | 運営。変更はclient_request_id、失効はversionも要求 | GET200、発行201、失効200。発行時は旧共通招待を失効し、コード/リンクは運営だけへ返す / Step 2 |
+| GET /invites/current、POST /invites、POST /invites/{id}/revoke | 運営。変更はclient_request_id、失効はversionも要求 | GET200、発行201、失効200。発行時は旧共通招待を失効。有効時のコード/リンクは運営だけへ返す / 2-5実装済み |
 | POST /participant-links | 所属、{guest_user_id,client_request_id} | 201で本人の申請/同意を記録。対応先の登録者IDはGoが本人から設定 / Step 3 |
 | GET /participant-links | 所属、cursor/limit | 200。一般memberは本人の申請だけ、運営はリーグの申請/対応を閲覧 / Step 3 |
 | POST /participant-links/{id}/approve または /reject | 運営、{confirmation_note,version,client_request_id} | 200。owner/adminの自己承認可。承認は同卓重複/他人への有効対応/循環を再確認 / Step 3 |

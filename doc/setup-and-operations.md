@@ -174,6 +174,16 @@ migration試験は環境を識別してから使い捨てDBを作る。空DB全�
 
 2-3までの既存7版を照合後、専用ローカルだけに `20261118004000_league_creation_events.sql` を適用し、対応Goを起動する。8本の空DB構築、合成/保存済みコピーの `npm run test:migrations`、実Authの `TestStep1RealDBAuth` を使う。既存の管理QA・共有DB・本番への適用は後続判断。今回のGoを使う場合は先に増分を適用する。問題があれば作成入口を停止して対応版を修正し、作成済みリーグやイベントを削除して復旧しない。
 
+## Step 2 / 2-5のローカル適用と招待鍵
+
+`mj-stats-step1` のDocker labelとDBポート55422、未link、2-4までの8版を照合する。`npm run supabase -- migration up` で `20261118005000_league_invites.sql` を適用し、対応Goを起動する。招待は追加の表・イベント権限を使う。問題時は招待入口を停止し、招待・操作記録をDBに保ったまま対応版を修正する。2-3の履歴認可と旧記録停止を維持する。元共有DB・既存管理QA・本番は適用対象外。
+
+- Goの `APP_ORIGIN` はWebのHTTP(S)オリジンを設定する。ローカルの例は `http://localhost:3000`。HTTP Host、転送ヘッダー、本文は生成先に使わない。
+- `INVITE_KEYS_JSON` は、キーを正の整数の10進文字列とし、値を32バイト以上のランダム鍵の標準Base64（必要なパディングを含む）とするJSONオブジェクト。`INVITE_CURRENT_KEY_VERSION` は発行に使う版で、JSON内にある正の整数を指定する。両設定が空なら招待管理だけ503。片方だけ設定した場合や形式・オリジンが不正な場合は起動時に一般化した設定エラーを返す。
+- 鍵はGoの環境用シークレットに設定する。鍵・発行応答のコードやリンクは共有.env、ログ、操作記録、Postmanの例・共有履歴に残さない。旧鍵がないかhashが一致しない有効招待の再表示は503。
+- 鍵切替は、まず現行版を変えず、新版の鍵を全Goプロセスで読めるようにしてから発行版を新版に変更する。旧版で発行した未失効・期限内の招待が全て期限切れか失効になるまで旧鍵を保持する。発行版を戻すときも、その間に発行した新版の鍵を保持する。
+- 合成と保存済み実コピーの `npm run test:migrations`、`api` の `MJSTATS_INTEGRATION=1 GIN_MODE=release go test -run TestStep1RealDBAuth -count=1 -v .` で確認する。実Auth試験の招待鍵はプロセス内にだけ生成される。
+
 ## 起動
 
 DBのスキーマと必要データ、環境変数を準備してから、別ターミナルで起動する。
@@ -297,12 +307,12 @@ Auth主体/セッション検証は公開しないschemaのSECURITY DEFINER関�
 | SUPABASE_URL | Go専用の信頼プロジェクトURL。issuerと固定JWKS URLを導く。Webのプロジェクトと一致 | Step 1 |
 | ALLOWED_ORIGINS | Goの許可originリスト。ローカルはhttp://localhost:3000。全origin許可で認証を通さない | Step 1 |
 | APP_ORIGIN | Web/Goが生成する確認後/招待URLの基準。HTTP Hostやbodyの外部URLを信用しない | Step 1〜2 |
-| INVITE_KEYS_JSON、INVITE_CURRENT_KEY_VERSION | Goだけが持つ鍵版と32byte以上のランダムHMAC鍵。期限内招待の旧鍵を保持。Git/ブラウザへ出さない | Step 2 |
+| INVITE_KEYS_JSON、INVITE_CURRENT_KEY_VERSION | Goだけが持つ鍵版と32byte以上のランダムHMAC鍵。期限内招待の旧鍵を保持。Git/ブラウザへ出さない | 2-5実装済み |
 | RATE_LIMIT_HASH_KEY | Go専用の32byte以上のランダム鍵。接続元の短期カウンタをhash化。平文IPをアプリ表へ保存しない | Step 2 |
 | Email確認・Site URL・許可URL・確認/回復テンプレート | Supabase側。ローカル受信先でtoken_hashのverifyOtpと登録/回復を区別して試験 | Step 1 |
 | JWT/セッションの現設定 | ES256と実claims、not_after・時間制限の有無。独自の定期ログアウトは追加しない。設定が設計と違えば受入前に解決する | Step 1 |
 
-上記は目標の設定名で、現在の.env/exampleが対応済みとは扱わない。実装PRでexampleに秘密でないplaceholderと用途を加える。DB接続情報やHMAC鍵を表示する確認コマンドをPRへ貼らない。鍵取得3秒・DB statement/lock待機5秒を初期の技術タイムアウトとして設計し、計測と故障注入で確認する。JWKS鍵変更時は旧新kidの検証、5分キャッシュと失効、必要な再起動を隔離環境で確認してから実環境へ適用する。
+招待のGo設定は `api/.env.example` に追加済み。試行制限の設定は実装時にexampleへ追加する。DB接続情報やHMAC鍵を表示する確認コマンドをPRへ貼らない。鍵取得3秒・DB statement/lock待機5秒を初期の技術タイムアウトとして設計し、計測と故障注入で確認する。JWKS鍵変更時は旧新kidの検証、5分キャッシュと失効、必要な再起動を隔離環境で確認してから実環境へ適用する。
 
 ### 実設定の確認と公開前の条件
 

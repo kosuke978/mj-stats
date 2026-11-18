@@ -1,0 +1,12 @@
+$kind: http-request
+description: "owner/admin向け。失効と同じ操作IDの再送は200。versionは文字列。"
+url: "{{base_url}}/api/leagues/{{league_id}}/invites/{{invite_id}}/revoke"
+method: POST
+headers:
+  Authorization: "Bearer {{access_token}}"
+  Content-Type: application/json
+body:
+  type: json
+  content: |
+    {"client_request_id":"{{client_request_id}}","version":"{{invite_version}}"}
+order: 20000

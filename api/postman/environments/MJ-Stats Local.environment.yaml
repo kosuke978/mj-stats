@@ -13,3 +13,9 @@ values:
   - key: client_request_id
     value: ""
     enabled: true
+  - key: invite_id
+    value: ""
+    enabled: true
+  - key: invite_version
+    value: ""
+    enabled: true

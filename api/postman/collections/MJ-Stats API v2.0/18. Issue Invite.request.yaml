@@ -1,0 +1,12 @@
+$kind: http-request
+description: "owner/admin向け。初回201、同じ操作IDでの再送は200。発行すると以前の未失効招待は失効。"
+url: "{{base_url}}/api/leagues/{{league_id}}/invites"
+method: POST
+headers:
+  Authorization: "Bearer {{access_token}}"
+  Content-Type: application/json
+body:
+  type: json
+  content: |
+    {"client_request_id":"{{client_request_id}}"}
+order: 19000
