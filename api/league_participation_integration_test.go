@@ -201,7 +201,13 @@ func testLeagueParticipation(t *testing.T, ctx context.Context, db, admin *sql.D
 	checkMembership(owner, actor, "owner", "active")
 	get("POST", root(f.b)+"/join", b, payload, 409, "IDEMPOTENCY_CONFLICT")
 	get("POST", root(f.b)+"/join", b, joinPayload(newID(), code), 404, "INVALID_INVITE")
-	get("POST", root(f.a)+"/join", b, joinPayload(joinID, "wrong"), 409, "IDEMPOTENCY_CONFLICT")
+	wrongCode := "0" + code[1:]
+	if wrongCode == code {
+		wrongCode = "1" + code[1:]
+	}
+	get("POST", root(f.a)+"/join", b, joinPayload(joinID, wrongCode), 409, "IDEMPOTENCY_CONFLICT")
+	get("POST", root(f.a)+"/join", b, joinPayload(joinID, "wrong"), 400, "INVALID_INPUT")
+	get("POST", root(f.a)+"/join", b, joinPayload(newID(), wrongCode), 404, "INVALID_INVITE")
 	exec(`UPDATE public.league_members SET status='removed',ended_at=now(),version=version+1 WHERE league_id=$1 AND user_id=$2`, f.a, other)
 	replay, _ := get("POST", root(f.a)+"/join", b, payload, 200, "")
 	checkMembership(replay, other, "member", "removed")
@@ -227,8 +233,8 @@ func testLeagueParticipation(t *testing.T, ctx context.Context, db, admin *sql.D
 		time.Sleep(time.Duration(61-seconds) * time.Second)
 	}
 	bad := map[string]string{"group_number": ga, "code": "invalid"}
-	limit1("POST", "/api/leagues/join-preview", b, bad, 404, "INVALID_INVITE")
-	limit2("POST", root(f.a)+"/join", b, joinPayload(newID(), "invalid"), 404, "INVALID_INVITE")
+	limit1("POST", "/api/leagues/join-preview", b, bad, 400, "INVALID_INPUT")
+	limit2("POST", root(f.a)+"/join", b, joinPayload(newID(), wrongCode), 404, "INVALID_INVITE")
 	_, wait := limit1("POST", "/api/leagues/join-preview", b, preview, 429, "RATE_LIMITED")
 	if retry, err := strconv.Atoi(wait); err != nil || retry < 1 || retry > 60 {
 		t.Fatal("missing Retry-After")
@@ -237,7 +243,7 @@ func testLeagueParticipation(t *testing.T, ctx context.Context, db, admin *sql.D
 	limit2("GET", search, a, nil, 200, "")
 	limit1("GET", search, a, nil, 429, "RATE_LIMITED")
 	ip := makeHTTP(newKey(), "", "10", "1")
-	ip("POST", "/api/leagues/join-preview", a, bad, 404, "INVALID_INVITE")
+	ip("POST", "/api/leagues/join-preview", a, bad, 400, "INVALID_INPUT")
 	ip("POST", "/api/leagues/join-preview", b, bad, 429, "RATE_LIMITED")
 
 	rotated := issue(f.a, a)
@@ -246,6 +252,7 @@ func testLeagueParticipation(t *testing.T, ctx context.Context, db, admin *sql.D
 	checkMembership(replay, other, "member", "active")
 	exec(`WITH stamp AS (SELECT clock_timestamp() AS t) UPDATE public.league_invites
 		SET issued_at=t-interval '168 hours',expires_at=t FROM stamp WHERE id=$1`, rotated["id"])
+	get("POST", "/api/leagues/join-preview", b, map[string]string{"group_number": ga, "code": rotated["code"].(string)}, 404, "INVALID_INVITE")
 	get("POST", root(f.a)+"/join", b, joinPayload(newID(), rotated["code"].(string)), 404, "INVALID_INVITE")
 
 	raceInvite := issue(f.removed, b)
@@ -276,5 +283,5 @@ func testLeagueParticipation(t *testing.T, ctx context.Context, db, admin *sql.D
 		t.Fatal("revoke and join did not serialize")
 	}
 	get("POST", root(f.removed)+"/join", a, joinPayload(newID(), revokedInvite["code"].(string)), 404, "INVALID_INVITE")
-	t.Log("Q-14/Q-26 PASS: listed search/normalized cursor, hidden number/preview without membership, shared invitations, join/rejoin, active roles, replay/rotation/expiry/competition, shared limit and Retry-After")
+	t.Log("Q-14/Q-26 PASS: listed search/normalized cursor, hidden number/preview without membership, shared invitations, join/rejoin, active roles, replay/rotation/expiry/competition, 400 invalid code format vs 404 valid but unmatched/expired, shared limit and Retry-After")
 }

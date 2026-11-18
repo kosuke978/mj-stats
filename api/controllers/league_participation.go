@@ -131,7 +131,7 @@ func compareJoinInvite(ctx context.Context, db inviteQuerier, leagueID, actor st
 	var expires time.Time
 	err := db.QueryRowContext(ctx, `SELECT id,credential_hash,expires_at FROM mjstats_private.join_invite($1,$2,$3)`,
 		leagueID, actor, replay).Scan(&id, &hash, &expires)
-	if err == nil && (!hmac.Equal([]byte(hash), []byte(invites.Hash(code))) || code == "") {
+	if err == nil && !hmac.Equal([]byte(hash), []byte(invites.Hash(code))) {
 		err = sql.ErrNoRows
 	}
 	return id, expires.UTC(), err
@@ -162,11 +162,16 @@ func (p *LeagueParticipation) Preview(c *gin.Context) {
 	if !p.allowInviteAttempt(c, l.ID) {
 		return
 	}
+	code := invites.NormalizeCode(input.Code)
+	if code == "" {
+		invalidQuery(c, "code")
+		return
+	}
 	if errors.Is(err, sql.ErrNoRows) {
 		rejectInvalidInvite(c)
 		return
 	}
-	_, expires, err := compareJoinInvite(ctx, p.Auth.DB, l.ID, c.GetString("participant_id"), nil, invites.NormalizeCode(input.Code))
+	_, expires, err := compareJoinInvite(ctx, p.Auth.DB, l.ID, c.GetString("participant_id"), nil, code)
 	switch {
 	case errors.Is(err, sql.ErrNoRows):
 		rejectInvalidInvite(c)
@@ -211,6 +216,11 @@ func (p *LeagueParticipation) Join(c *gin.Context) {
 		return
 	}
 	if !p.allowInviteAttempt(c, leagueID) {
+		return
+	}
+	code := invites.NormalizeCode(input.Code)
+	if code == "" {
+		invalidQuery(c, "code")
 		return
 	}
 
@@ -262,7 +272,6 @@ func (p *LeagueParticipation) Join(c *gin.Context) {
 		httpx.Unavailable(c)
 		return
 	}
-	code := invites.NormalizeCode(input.Code)
 	if previousLeague != "" {
 		if previousLeague != leagueID {
 			rejectJoinConflict(c)

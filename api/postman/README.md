@@ -20,4 +20,4 @@
 
 コードやリンクは共有変数、保存済みレスポンス、共有履歴、exportに入れません。
 
-Search Leaguesは掲載名だけを検索し、Resolve League Numberは非掲載の番号も解決します。Preview Joinは所属を作らず、Join Leagueで明示的に参加します。隔離環境で確認するときだけ `invite_code` の空のsecret変数にローカル値を一時設定し、確認後に消去します。無効招待は404、試行制限は429とRetry-Afterです。
+Search Leaguesは掲載名だけを検索し、Resolve League Numberは非掲載の番号も解決します。Preview Joinは所属を作らず、Join Leagueで明示的に参加します。隔離環境で確認するときだけ `invite_code` の空のsecret変数にローカル値を一時設定し、確認後に消去します。参加コードの形式不正は400、形式が正しいコードの不一致・期限切れ・失効は404です。試行制限は429とRetry-Afterです。
