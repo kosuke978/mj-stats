@@ -364,7 +364,10 @@ test('Q-10: changing accounts discards the previous viewer and SSR cache', async
 test('Q-19/Q-21: invitation return path survives signup, email confirmation and profile setup', async ({ page }) => {
   const email = `join-signup-${Date.now()}@example.test`
   const path = '/join/000100200300'
-  await page.goto(path)
+  // A well-formed fake invite for a league that does not exist in the fixture.
+  const code = '0123456789ABCDEF'
+  await page.goto(path + '#code=' + code)
+  await expect(page).toHaveURL(path)
   await page.getByRole('link', { name: '新規登録' }).click()
   await expect(page).toHaveURL(`/signup?returnTo=${encodeURIComponent(path)}`)
   await page.getByLabel('メールアドレス').fill(email)
@@ -379,8 +382,19 @@ test('Q-19/Q-21: invitation return path survives signup, email confirmation and 
   await page.getByLabel('表示名').fill('招待復帰の試験')
   await page.getByRole('button', { name: '表示名を設定して進む' }).click()
   await expect(page).toHaveURL(path)
-  await expect(page.getByLabel('参加コード')).toBeEmpty()
+  await expect.poll(async () => (await page.getByLabel('参加コード').inputValue()) === code).toBeTruthy()
+  const otherTab = await page.context().newPage()
+  try {
+    await otherTab.goto(path)
+    await expect(otherTab.getByLabel('参加コード')).toBeEmpty()
+    await expect(otherTab.getByText(/招待リンクを開き直すか/)).toBeVisible()
+  } finally {
+    await otherTab.close()
+  }
   await expect(page.getByRole('button', { name: 'このリーグに参加' })).toHaveCount(0)
+  await page.getByRole('button', { name: '招待を確認' }).click()
+  await expect(page.getByRole('main').getByRole('alert')).toContainText('有効な招待がありません')
+  await expect(page.getByLabel('参加コード')).toBeEmpty()
   await page.goto('/matches')
   await expect(page.getByText('所属しているリーグがありません。')).toBeVisible()
 })

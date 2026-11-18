@@ -1,33 +1,52 @@
 'use client'
 
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useEffect, useEffectEvent, useRef, useState, type ReactNode } from 'react'
 import { useViewer } from '@/components/auth/viewer-provider'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { APIError } from '@/lib/auth/api'
 import { clientAPI } from '@/lib/auth/client-api'
+import { captureInvite, clearPendingInvite, inviteDiscarded, restoreInvite } from '@/lib/auth/pending-invite'
 import { leagueMessage, type LeagueSummary, useLeagueAction } from './league-api'
 
-// The browser is the sole reader of the fragment. Remove it before navigation.
-export function useInviteFragment(receive?: (code: string) => void) {
+// Capture before showing the auth links, and remove the fragment from history.
+function useInviteLink(groupNumber: string, subject: string | null, receive: (code: string | null) => void) {
+  const deliver = useEffectEvent(receive)
   useEffect(() => {
-    function read() {
+    let mounted = true
+    function load() {
       const hash = window.location.hash
-      if (!hash) return
-      const code = new URLSearchParams(hash.slice(1)).get('code')
-      window.history.replaceState(window.history.state, '', window.location.pathname)
-      if (code && code.length <= 64 && receive) queueMicrotask(() => receive(code))
+      let code = restoreInvite(groupNumber, subject)
+      if (hash) {
+        const fromLink = new URLSearchParams(hash.slice(1)).get('code')
+        window.history.replaceState(window.history.state, '', window.location.pathname)
+        if (fromLink && fromLink.length <= 64) {
+          captureInvite(groupNumber, fromLink, subject)
+          code = fromLink
+        }
+      }
+      queueMicrotask(() => {
+        if (mounted) deliver(code)
+      })
     }
-    read()
-    window.addEventListener('hashchange', read)
-    return () => window.removeEventListener('hashchange', read)
-  }, [receive])
+    load()
+    window.addEventListener('hashchange', load)
+    return () => {
+      mounted = false
+      window.removeEventListener('hashchange', load)
+    }
+  }, [groupNumber, subject])
 }
 
-export function DiscardInviteFragment() {
-  useInviteFragment()
-  return null
+export function InviteHandoff({ groupNumber, subject, children }: {
+  groupNumber: string
+  subject: string | null
+  children: ReactNode
+}) {
+  const [ready, setReady] = useState(false)
+  useInviteLink(groupNumber, subject, () => setReady(true))
+  return ready ? children : <p role="status" className="text-sm">参加画面を準備しています…</p>
 }
 
 type Preview = { league: LeagueSummary; expires_at: string }
@@ -35,19 +54,34 @@ type Membership = { league_id: string; status: 'active' | 'left' | 'removed' }
 
 export function JoinLeague({ groupNumber }: { groupNumber: string }) {
   const { subject } = useViewer()
+  const [reset, setReset] = useState(0)
+  useEffect(() => {
+    const discard = () => setReset((n) => n + 1)
+    window.addEventListener(inviteDiscarded, discard)
+    return () => window.removeEventListener(inviteDiscarded, discard)
+  }, [])
+  return <JoinForm key={reset} groupNumber={groupNumber} subject={subject} />
+}
+
+function JoinForm({ groupNumber, subject }: { groupNumber: string; subject: string }) {
   const [code, setCode] = useState('')
   const [preview, setPreview] = useState<Preview | null>(null)
   const [busy, setBusy] = useState(false)
   const checking = useRef(false)
   const [message, setMessage] = useState('')
   const action = useLeagueAction()
-  const receive = useCallback((value: string) => {
-    if (checking.current || action.busy || action.retry) return
+  useInviteLink(groupNumber, subject, (value) => {
+    if (!value || checking.current || action.busy || action.retry) return
     setCode(value)
     setPreview(null)
     setMessage('')
-  }, [action.busy, action.retry])
-  useInviteFragment(receive)
+  })
+
+  function discardCode() {
+    clearPendingInvite(groupNumber)
+    setCode('')
+    setPreview(null)
+  }
 
   async function confirmCode(event: React.FormEvent) {
     event.preventDefault()
@@ -63,8 +97,9 @@ export function JoinLeague({ groupNumber }: { groupNumber: string }) {
       }, subject)
       setPreview(result)
     } catch (error) {
-      if (error instanceof APIError && error.code === 'INVALID_INVITE') setCode('')
-      setMessage(leagueMessage(error))
+      const format = error instanceof APIError && error.code === 'INVALID_INPUT'
+      if (format || (error instanceof APIError && error.code === 'INVALID_INVITE')) discardCode()
+      setMessage(format ? '参加コードの形式を確認してください。' : leagueMessage(error))
     } finally {
       checking.current = false
       setBusy(false)
@@ -78,14 +113,10 @@ export function JoinLeague({ groupNumber }: { groupNumber: string }) {
       path: `/api/leagues/${leagueID}/join`,
       body: { code, client_request_id: crypto.randomUUID() },
     }, (reason) => {
-      if (reason === 'INVALID_INVITE') {
-        setCode('')
-        setPreview(null)
-      }
+      if (reason === 'INVALID_INVITE' || reason === 'INVALID_INPUT') discardCode()
     })
     if (!result) return
-    setCode('')
-    setPreview(null)
+    discardCode()
     if (result.membership.status === 'active') {
       window.location.assign(`/matches/league/${leagueID}`)
     } else {
@@ -99,6 +130,7 @@ export function JoinLeague({ groupNumber }: { groupNumber: string }) {
         <Label htmlFor="join-code">参加コード</Label>
         <Input id="join-code" value={code} type="text" autoComplete="off" spellCheck={false}
           disabled={busy || action.busy || action.retry} onChange={(e) => {
+            clearPendingInvite(groupNumber)
             setCode(e.target.value)
             setPreview(null)
             setMessage('')

@@ -1,7 +1,7 @@
 import Link from 'next/link'
 import { notFound } from 'next/navigation'
 import { ViewerProvider } from '@/components/auth/viewer-provider'
-import { DiscardInviteFragment, JoinLeague } from '@/components/leagues/join-league'
+import { InviteHandoff, JoinLeague } from '@/components/leagues/join-league'
 import { APIError } from '@/lib/auth/api'
 import { loginPath } from '@/lib/auth/paths'
 import { getViewer } from '@/lib/auth/server'
@@ -32,7 +32,7 @@ export default async function JoinPage({ params }: { params: Promise<{ group_num
         <main className="mx-auto w-full max-w-lg space-y-4 px-4 py-6">
           <Link href="/leagues/search" className="text-sm underline">リーグを探す</Link>
           {heading}
-          <p className="text-sm text-muted-foreground">招待リンクを開き直すか、受け取った参加コードを入力してください。</p>
+          <p className="text-sm text-muted-foreground">コードが表示されない場合は、招待リンクを開き直すか、受け取ったコードを入力してください。</p>
           <JoinLeague key={number} groupNumber={number} />
         </main>
       </ViewerProvider>
@@ -41,25 +41,26 @@ export default async function JoinPage({ params }: { params: Promise<{ group_num
   const query = `returnTo=${encodeURIComponent(path)}`
   return (
     <main className="mx-auto w-full max-w-lg space-y-4 px-4 py-6">
-      {!unavailable && <DiscardInviteFragment />}
       {heading}
       {unavailable ? (
         <p role="alert">本人情報を確認できませんでした。時間をおいてページを開き直してください。</p>
       ) : (
         <section className="space-y-3 rounded-lg border p-4">
           <p className="text-sm">
-            手続き後に参加画面へ戻ります。元の招待リンクを開き直すか、受け取った参加コードを入力してください。
+            同じタブで手続きすると参加画面に戻ります。コードが表示されない場合は、招待リンクを開き直すか、受け取ったコードを入力してください。
           </p>
-          <div className="flex flex-wrap gap-4 underline">
-            {current ? (
-              <Link href={`/profile/setup?${query}`} prefetch={false}>表示名を設定</Link>
-            ) : (
-              <>
-                <Link href={loginPath(path)} prefetch={false}>ログイン</Link>
-                <Link href={`/signup?${query}`} prefetch={false}>新規登録</Link>
-              </>
-            )}
-          </div>
+          <InviteHandoff groupNumber={number} subject={current?.subject ?? null}>
+            <div className="flex flex-wrap gap-4 underline">
+              {current ? (
+                <Link href={`/profile/setup?${query}`} prefetch={false}>表示名を設定</Link>
+              ) : (
+                <>
+                  <Link href={loginPath(path)} prefetch={false}>ログイン</Link>
+                  <Link href={`/signup?${query}`} prefetch={false}>新規登録</Link>
+                </>
+              )}
+            </div>
+          </InviteHandoff>
         </section>
       )}
     </main>
