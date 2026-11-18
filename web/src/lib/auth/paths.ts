@@ -13,7 +13,8 @@ export function safeReturnTo(value: string | null | undefined): string {
     const url = new URL(value, 'https://app.invalid')
     if (url.origin !== 'https://app.invalid' || url.hash || url.search)
       return '/matches'
-    return ['/matches', '/matches/new', '/account'].includes(url.pathname)
+    const leagueHistory = /^\/matches\/league\/[a-f0-9]{8}(?:-[a-f0-9]{4}){3}-[a-f0-9]{12}$/i
+    return (['/matches', '/matches/new', '/account'].includes(url.pathname) || leagueHistory.test(url.pathname))
       ? url.pathname
       : '/matches'
   } catch {

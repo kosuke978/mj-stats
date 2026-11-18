@@ -1,42 +1,36 @@
 import Link from "next/link"
 import { serverAPI } from "@/lib/auth/server"
-
-import { MatchCard } from "@/components/match-card"
-import { buttonVariants } from "@/components/ui/button"
-import type { GetMatchesResponse } from "@/types/match"
+import type { League } from "@/types/match"
 
 export const dynamic = "force-dynamic"
 
-async function getMatches() {
-  const data = await serverAPI<GetMatchesResponse>("/api/matches", "/matches")
-  return data.matches
-}
+const roles = { owner: "オーナー", admin: "管理者", member: "メンバー" }
 
 export default async function MatchesPage() {
-  const matches = await getMatches()
+  const { leagues } = await serverAPI<{ leagues: League[] }>("/api/leagues", "/matches")
 
   return (
-    <main className="mx-auto flex min-h-dvh w-full max-w-2xl flex-col px-4 py-6">
-      <header className="mb-5 space-y-3">
-        <div className="flex items-center justify-between gap-3">
-          <h1 className="text-2xl font-bold tracking-tight">対局履歴</h1>
-          <Link href="/matches/new" className={buttonVariants({ size: "sm" })}>
-            結果を入力
-          </Link>
-        </div>
-        <p className="text-sm text-muted-foreground">最新の対局結果を時系列で確認できます。</p>
-      </header>
-
-      {matches.length === 0 ? (
-        <p className="rounded-lg border border-dashed p-6 text-center text-sm text-muted-foreground">
-          対局履歴はまだありません。
-        </p>
+    <main className="mx-auto w-full max-w-2xl space-y-4 px-4 py-6">
+      <h1 className="text-2xl font-bold tracking-tight">対局履歴</h1>
+      {leagues.length === 0 ? (
+        <p className="rounded-lg border border-dashed p-4 text-sm">所属しているリーグがありません。</p>
       ) : (
-        <section className="space-y-4">
-          {matches.map((match) => (
-            <MatchCard key={match.id} match={match} />
-          ))}
-        </section>
+        <nav aria-label="リーグを選択">
+          <ul className="space-y-2">
+            {leagues.map((league) => (
+              <li key={league.id}>
+                <Link
+                  href={`/matches/league/${league.id}`}
+                  prefetch={false}
+                  className="flex flex-wrap items-baseline justify-between gap-2 rounded-md border p-3 hover:bg-muted"
+                >
+                  <span className="min-w-0 font-medium wrap-anywhere">{league.name}</span>
+                  <span className="text-sm text-muted-foreground">{roles[league.my_role]}</span>
+                </Link>
+              </li>
+            ))}
+          </ul>
+        </nav>
       )}
     </main>
   )

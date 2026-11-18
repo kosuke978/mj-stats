@@ -1,4 +1,6 @@
 import { defineConfig } from '@playwright/test'
+const evidence = process.env.MJSTATS_BROWSER_EVIDENCE ?? '../.local/browser-results'
+
 export default defineConfig({
   testDir: './tests/browser',
   workers: 1,
@@ -6,10 +8,10 @@ export default defineConfig({
   timeout: 90_000,
   expect: { timeout: 15_000 },
   retries: 0,
-  outputDir: '../.local/browser-results',
+  outputDir: evidence,
   reporter: [
     ['list'],
-    ['json', { outputFile: '../.local/browser-results.json' }],
+    ['json', { outputFile: `${evidence}.json` }],
   ],
   use: {
     actionTimeout: 15_000,

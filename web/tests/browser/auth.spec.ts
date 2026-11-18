@@ -143,39 +143,17 @@ test('Q-09/Q-10/Q-21: registration, browser/SSR, refresh, recovery and local log
     (await session(context)).value.refresh_token !== beforeRedirect,
   ).toBeTruthy()
   await page.goto('/matches/new')
-  const authorization: string[] = []
-  page.on('request', (request) => {
-    if (
-      request.url().startsWith(`${api}/api/matches`) &&
-      request.method() === 'POST'
-    )
-      authorization.push(request.headers().authorization ?? '')
+  await expect(page.getByText('対局の計算・記録は現在利用できません。')).toBeVisible()
+  await expect(page.getByRole('button', { name: '計算結果をプレビュー' })).toHaveCount(0)
+  const stopped = await context.request.post(`${api}/api/matches/calculate`, {
+    headers: { Authorization: `Bearer ${(await session(context)).value.access_token}` },
+    data: { players: [] },
   })
-  // Confirm the existing form has hydrated before sending select change events.
-  await page.getByRole('button', { name: '計算結果をプレビュー' }).click()
-  await expect(
-    page.getByText('メンバーを選択してください', { exact: true }).first(),
-  ).toBeVisible()
-  const names = ['こうすけ', 'さとし', 'りな', 'ゆうた']
-  for (let i = 0; i < 4; i++) {
-    await page.getByRole('combobox').nth(i).selectOption({ label: names[i] })
-    await page
-      .getByLabel('持ち点', { exact: true })
-      .nth(i)
-      .fill(String(400 - i * 100))
-  }
-  await page.getByRole('button', { name: '計算結果をプレビュー' }).click()
-  await expect(page.getByRole('dialog')).toBeVisible()
-  await page
-    .getByRole('dialog')
-    .getByRole('button', { name: 'この内容で保存' })
-    .click()
+  expect(stopped.status()).toBe(409)
+  expect((await stopped.json()).error.code).toBe('RECORDING_UNAVAILABLE')
+  await page.getByRole('link', { name: '履歴を見る' }).click()
   await expect(page).toHaveURL('/matches')
-  await expect(page.getByRole('heading', { name: '対局履歴' })).toBeVisible()
-  expect(authorization.length).toBe(2)
-  expect(
-    authorization.every((header) => header.startsWith('Bearer ')),
-  ).toBeTruthy()
+  await expect(page.getByText('所属しているリーグがありません。')).toBeVisible()
   const ssr = await context.request.get('http://localhost:3000/matches')
   expect(ssr.status()).toBe(200)
   expect(ssr.headers()['cache-control']).toContain('no-store')
@@ -271,7 +249,7 @@ test('Q-09/Q-10/Q-21: registration, browser/SSR, refresh, recovery and local log
     headers: { Authorization: `Bearer ${secondSession.value.access_token}` },
   })
   expect(alive.status).toBe(200)
-  await second.screenshot({ path: '../.local/account-390.png' })
+  await second.screenshot({ path: test.info().outputPath('account-390.png') })
   await expireAccessToken(secondContext, true)
   await second.goto('/matches/new')
   await expect(second).toHaveURL(/\/login\?returnTo=%2Fmatches%2Fnew/)
@@ -301,7 +279,7 @@ for (const width of [360, 390, 768, 1280]) {
       ),
     ).toBeTruthy()
     if (width === 360)
-      await page.screenshot({ path: '../.local/login-360-text200.png' })
+      await page.screenshot({ path: test.info().outputPath('login-360-text200.png') })
   })
 }
 
