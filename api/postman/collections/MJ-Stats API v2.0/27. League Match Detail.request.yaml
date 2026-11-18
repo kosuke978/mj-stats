@@ -1,0 +1,7 @@
+$kind: http-request
+description: "200 Match。原user_id、canonical_user_id、rank、正確なpointを取得。別リーグの対局は404。"
+url: "{{base_url}}/api/leagues/{{league_id}}/matches/{{match_id}}"
+method: GET
+headers:
+  Authorization: "Bearer {{access_token}}"
+order: 28000

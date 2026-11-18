@@ -29,3 +29,30 @@ values:
     value: ""
     enabled: true
     type: secret
+  - key: rule_id
+    value: ""
+    enabled: true
+  - key: match_id
+    value: ""
+    enabled: true
+  - key: guest_user_id
+    value: ""
+    enabled: true
+  - key: link_id
+    value: ""
+    enabled: true
+  - key: link_version
+    value: ""
+    enabled: true
+  - key: player_1_id
+    value: ""
+    enabled: true
+  - key: player_2_id
+    value: ""
+    enabled: true
+  - key: player_3_id
+    value: ""
+    enabled: true
+  - key: player_4_id
+    value: ""
+    enabled: true

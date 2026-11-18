@@ -1,0 +1,7 @@
+$kind: http-request
+description: "200 participant_links。memberは自分の申請、owner/adminは対象リーグの全申請。"
+url: "{{base_url}}/api/leagues/{{league_id}}/participant-links"
+method: GET
+headers:
+  Authorization: "Bearer {{access_token}}"
+order: 30000

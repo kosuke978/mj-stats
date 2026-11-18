@@ -1,5 +1,5 @@
 $kind: http-request
-description: "所属リーグの通常対局だけ。season: all/unassigned/UUID、status: all/valid/cancelled、limit: 1〜100、cursor: 同じ条件のnext_cursor。"
+description: "所属リーグの通常対局だけ。season: all/unassigned/UUID、status: all/valid/cancelled、limit: 1〜100、cursor: 同じ条件のnext_cursor。 pointは分子と分母が整数文字列の既約分数。"
 url: "{{base_url}}/api/matches?league_id={{league_id}}&season=all&limit=20"
 method: GET
 headers:
