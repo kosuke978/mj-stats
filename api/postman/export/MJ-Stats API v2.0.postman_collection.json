@@ -1,7 +1,7 @@
 {
   "info": {
     "name": "MJ-Stats API v2.0",
-    "description": "2-3: 設定済みBearerで所属リーグの参照。旧計算・保存は停止中。",
+    "description": "2-4: 設定済みBearerでリーグ作成と所属リーグの参照。旧対局計算・保存は停止中。",
     "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
   },
   "item": [
@@ -230,6 +230,30 @@
         "header": [],
         "url": "{{base_url}}/api/matches?league_id={{league_id}}&season=all&limit=20",
         "description": "所属リーグの通常対局だけ。season: all/unassigned/UUID、status: all/valid/cancelled、limit: 1〜100、cursor: 同じ条件のnext_cursor。"
+      },
+      "response": []
+    },
+    {
+      "name": "16. Create League",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "url": "{{base_url}}/api/leagues",
+        "description": "名前設定済み登録者が初期ownerとして作成。初回201、同じ操作IDと内容の再送は200、内容違いは409。新規操作ごとにUUIDを変え、再送では同じUUIDを保持する。",
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"name\": \"Postmanリーグ\",\n  \"client_request_id\": \"{{client_request_id}}\"\n}",
+          "options": {
+            "raw": {
+              "language": "json"
+            }
+          }
+        }
       },
       "response": []
     }

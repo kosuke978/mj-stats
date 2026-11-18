@@ -1,6 +1,14 @@
 # 実装済み機能とAPI契約
 
-Step 1は完了承認済み、2-1はPR #9でマージ済み。PR #10の同じブランチで2-2のDB基盤に続いて2-3のリーグ認可・参照・履歴切替を実装した。現在の対局APIと画面は以下の2-3節を正本とする。Step 2全体は途中。
+Step 1は完了承認済み、2-1はPR #9でマージ済み。PR #10の同じブランチで2-2のDB基盤に続いて2-3のリーグ認可・参照・履歴切替と、2-4のリーグ作成を実装した。現在の対局APIと画面は以下の2-3節を正本とする。Step 2全体は途中。
+
+## 2-4のリーグ作成API
+
+`POST /api/leagues` は名前設定済みの登録者向け。既存リーグへの所属は不要。入力は `{"name":"仲間のリーグ","client_request_id":"00000000-0000-4000-8000-000000000001"}`。操作IDはUUID。リーグ名は前後のUnicode空白を除いて1〜100コードポイントで、改行・制御文字を拒否する。ownerやroleの指定、未知/重複キーは400。
+
+初回は201 `{league,rule}`。`league` は下記のリーグ詳細と同じ `id,name,group_number,my_role`、`rule` はルール一覧の要素と同じ型。グループ番号は先頭ゼロを含む12桁の文字列。初期ownerは検証済み本人の永続参加者ID、所属はregistered/active/owner。初期ルールは25,000点持ち・30,000点返し、ウマ20/10/−10/−20、exact_v1、利用可。リーグは非掲載で、シーズンは作らない。
+
+同じ本人・操作ID・正規化後の名前で再送すると200。同じリーグと初期ルールのIDを使って参照時点の値を返す。再送時に参照権限も確認する。同じ本人・操作IDで名前が違えば409 `IDEMPOTENCY_CONFLICT`。新規操作では新しいUUIDを使い、通信が切れた場合は同じ内容とUUIDを保持する。番号は衝突時に最大5回再生成し、上限到達・DB障害は503。未認証は401、本人情報なしまたは名前未設定は403。リーグ、owner所属、初期ルール、操作記録は一括で確定する。
 
 ## 2-3の参照API実装
 
@@ -302,7 +310,7 @@ field_errorsは入力不備の場合だけ返し、messageは表示用、分岐�
 | GET /api/users/me | 本人JWT | 200 {id,name,profile_completed_at}。auth_idで検索/並行初回作成。初期名Player、完了時刻NULL。既存名を上書きしない / Step 1 |
 | PATCH /api/users/me | 本人JWT、{name}のみ | 200で同じ本人型。D-24で検証し、初回だけ完了時刻も一括設定。以後の名前変更で完了時刻・他人のIDを変更しない / Step 1 |
 | GET /api/leagues | 設定済 | 200 {leagues:[{id,name,group_number,my_role}]}、自分の有効所属だけ / Step 2 |
-| POST /api/leagues | 設定済、{name,client_request_id} | 201 {league,rule}。番号/リーグ/初期owner所属/初期ルールを一括作成。シーズンは自動作成せず、初期非掲載 / Step 2 |
+| POST /api/leagues | 設定済、{name,client_request_id} | 初回201、同内容再送200 {league,rule}。番号/リーグ/初期owner所属/初期ルールと操作記録を一括作成。シーズンは自動作成せず、初期非掲載 / 2-4実装済み |
 | GET /api/leagues/search | 設定済、q/cursor/limit | 200 {leagues,next_cursor}。掲載済みのid/name/group_numberだけ。参加コード・所属者・成績なし / Step 2 |
 | POST /api/leagues/resolve | 設定済、{group_number} | 200で最小リーグ情報、番号なしは404。非掲載も番号で解決可。所属作成なし / Step 2 |
 | POST /api/leagues/join-preview | 設定済、{group_number,code} | 200で最小リーグ情報とexpires_at。無効/期限切れ/失効は404 INVALID_INVITEに統一。所属作成なし / Step 2 |

@@ -10,3 +10,6 @@ values:
   - key: league_id
     value: ""
     enabled: true
+  - key: client_request_id
+    value: ""
+    enabled: true

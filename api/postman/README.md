@@ -1,6 +1,6 @@
 # MJ-Stats Postman
 
-ローカルの2-3対応Goとmigrationを使用します。インポート対象は `export/MJ-Stats API v2.0.postman_collection.json` と `export/MJ-Stats.local.postman_environment.json` です。
+ローカルの2-4対応Goとmigrationを使用します。インポート対象は `export/MJ-Stats API v2.0.postman_collection.json` と `export/MJ-Stats.local.postman_environment.json` です。
 
 1. `base_url` を専用ローカルGoに合わせ、同じローカルAuthの本人access tokenを `access_token` のローカル値へ設定します。
 2. Health → Get Me → 必要なら Set My Display Name → My Leagues の順で確認します。My Leaguesで返った有効所属のIDを `league_id` に指定します。
@@ -9,3 +9,5 @@
 5. History Without Leagueは400。旧計算・保存POSTは409で処理を停止します。Missing BearerとInvalid JWTは401です。
 
 トークンを共有・exportへ含めません。実行範囲と証跡は [品質・受入](../../doc/quality-and-acceptance.md) を参照してください。
+
+リーグの作成を確認する場合は、名前設定後に `client_request_id` に新しいUUIDを設定し、Create Leagueを実行します。初回は201、同じ本人・UUID・リーグ名で再送すると200で同じリーグと初期ルールが返ります。同じUUIDで名前だけ変えると409 `IDEMPOTENCY_CONFLICT` です。別のリーグを作るときは新しいUUIDを使います。返された `league.id` を `league_id` に入れると、My Leagues・League・Rulesで初期状態を確認できます。

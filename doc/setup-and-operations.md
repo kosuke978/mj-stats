@@ -84,7 +84,7 @@ node scripts/run-local.mjs web-start
 
 ### migrationとAuth権限の適用
 
-- 空の専用スタック：CLI start/resetが [migrations](../supabase/migrations) の7本を時刻順に通常postgresとして適用する。D-40の旧 `supabase/permissions/step1_auth.sql` は適用しない。
+- 空の専用スタック：CLI start/resetが [migrations](../supabase/migrations) の8本を時刻順に通常postgresとして適用する。D-40の旧 `supabase/permissions/step1_auth.sql` は適用しない。
 - baselineは観測済み7表39列20制約9 indexを再現する。既存DBへCREATE TABLEを再実行しない。既存環境の正確な列・制約・index・RLS・policy・triggerを照合した後だけbaselineを履歴へ記録し、増分を適用する。再開後の実コピーで一致と増分保全を確認した。元の共有DBには適用しない。
 - `node scripts/test-migrations.mjs` は識別済みコンテナ内の使い捨てDBで、Authメタデータ契約と合成旧データを用意して増分と再適用拒否を確認する。`--snapshot .local/legacy-actual-20261117.json` を指定すると実コピーの構造を照合し、全元列値・参照を比較する。元のスナップショットは `api` で `go run ./cmd/legacy-snapshot ../.local/legacy-actual-20261117.json` によりREAD ONLY取得する。生成した一時DBだけをfinallyで削除する。
 - D-41ではpostgres所有の非公開viewを通じて限定7列と行ロックを委譲する。関数所有はNOLOGIN/NOBYPASSRLS、viewのSELECT/UPDATE(id)だけでAuthへの直接権限は持たない。viewへの実UPDATEはtriggerで拒否する。AuthのRLS/policyを変更せず、所有者やsupabase_adminの追加作業を要求しない。
@@ -169,6 +169,10 @@ migration試験は環境を識別してから使い捨てDBを作る。空DB全�
 2. GoとWebの旧プロセスを止める。旧GoのDB接続が終了したのを確認し、`npm run supabase -- migration up` で `20261118003000_league_history_cutover.sql` を適用する。
 3. 2-3対応Goを起動し、リーグ認可、旧履歴のscopeなし400、旧POSTの409、通常INSERTの拒否を確認してから対応Webを起動する。
 4. 不具合時は履歴と記録の入口を停止したまま修正する。通常行が読めるpolicyと旧Goの組合せへ戻さず、旧INSERT権限も再付与しない。元の行値を復元する必要はない。別環境で再現する場合は保存済みコピーを専用ローカルの一時DBで使う。
+
+## Step 2 / 2-4のローカル適用
+
+2-3までの既存7版を照合後、専用ローカルだけに `20261118004000_league_creation_events.sql` を適用し、対応Goを起動する。8本の空DB構築、合成/保存済みコピーの `npm run test:migrations`、実Authの `TestStep1RealDBAuth` を使う。既存の管理QA・共有DB・本番への適用は後続判断。今回のGoを使う場合は先に増分を適用する。問題があれば作成入口を停止して対応版を修正し、作成済みリーグやイベントを削除して復旧しない。
 
 ## 起動
 
