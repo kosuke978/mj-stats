@@ -112,6 +112,11 @@ export function CredentialsForm({
   }
   return (
     <div className="space-y-5">
+      {next.startsWith('/join/') && (
+        <p className="rounded-md border p-3 text-sm">
+          手続き後に参加画面へ戻ります。招待リンクを開き直すか、受け取った参加コードを入力してください。
+        </p>
+      )}
       <form onSubmit={submit} className="space-y-4">
         <div className="space-y-2">
           <Label htmlFor="email">メールアドレス</Label>

@@ -8,6 +8,7 @@ export class APIError extends Error {
     public status: number,
     public code: string,
     message: string,
+    public retryAfter?: number,
   ) {
     super(message)
   }
@@ -19,6 +20,7 @@ export async function apiResponse<T>(response: Response): Promise<T> {
     response.status,
     data?.error?.code ?? 'INTERNAL_ERROR',
     data?.error?.message ?? '処理に失敗しました。再試行してください',
+    Number(response.headers.get('Retry-After')) || undefined,
   )
 }
 export async function tokenFetch(

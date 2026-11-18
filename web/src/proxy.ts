@@ -36,6 +36,8 @@ export async function proxy(request: NextRequest) {
   const protectedPage =
     path === '/account' ||
     path.startsWith('/matches') ||
+    path === '/leagues/new' ||
+    path === '/leagues/search' ||
     path === '/profile/setup' ||
     path === '/password/update'
   if (

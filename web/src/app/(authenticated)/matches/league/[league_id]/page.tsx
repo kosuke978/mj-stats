@@ -83,6 +83,9 @@ export default async function LeagueHistoryPage({
       <header className="space-y-2">
         <Link href="/matches" prefetch={false} className="text-sm underline">リーグを切り替える</Link>
         <h1 className="text-2xl font-bold wrap-anywhere">{league.name}の対局履歴</h1>
+        {(league.my_role === 'owner' || league.my_role === 'admin') && (
+          <Link href={path + '/invites'} prefetch={false} className="text-sm underline">招待を管理</Link>
+        )}
         <p className="text-sm text-muted-foreground">対局の計算・記録は現在利用できません。</p>
       </header>
       <form action={path} method="get" className="flex flex-wrap items-end gap-2">

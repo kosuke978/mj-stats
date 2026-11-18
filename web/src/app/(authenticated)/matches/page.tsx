@@ -12,6 +12,10 @@ export default async function MatchesPage() {
   return (
     <main className="mx-auto w-full max-w-2xl space-y-4 px-4 py-6">
       <h1 className="text-2xl font-bold tracking-tight">対局履歴</h1>
+      <nav aria-label="リーグの作成と参加" className="flex flex-wrap gap-4 text-sm underline">
+        <Link href="/leagues/new">リーグを作成</Link>
+        <Link href="/leagues/search">リーグに参加</Link>
+      </nav>
       {leagues.length === 0 ? (
         <p className="rounded-lg border border-dashed p-4 text-sm">所属しているリーグがありません。</p>
       ) : (

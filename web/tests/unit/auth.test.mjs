@@ -55,3 +55,13 @@ test('only a UUID league history pathname can survive a login redirect', () => {
   }
   assert.equal(safeReturnTo('/matches/league/not-a-uuid'), '/matches')
 })
+
+test('join return destination carries only the twelve-digit path', () => {
+  const path = '/join/000100200300'
+  assert.equal(safeReturnTo(path), path)
+  for (const invalid of [path + '#code=sample', path + '?code=sample', path + '0', path + '/', '/join/1234']) {
+    assert.equal(safeReturnTo(invalid), '/matches')
+  }
+  assert.equal(safeReturnTo('/leagues/new'), '/leagues/new')
+  assert.equal(safeReturnTo('/leagues/search'), '/leagues/search')
+})
