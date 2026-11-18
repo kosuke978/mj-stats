@@ -252,8 +252,8 @@ func TestStep1ManagedSupabase(t *testing.T) {
     WITH r AS (INSERT INTO public.rules(name,uma_1,uma_2,uma_3,uma_4) VALUES('Managed QA rule',20,10,-10,-20) RETURNING id),
     m AS (INSERT INTO public.matches(recorded_by,rule_id) SELECT `+quote(participant)+`,id FROM r RETURNING id)
     INSERT INTO public.match_results(match_id,user_id,raw_score,final_point,rank) SELECT id,`+quote(participant)+`,25000,0,1 FROM m;`, false)
-	if code, _ := call("GET", "/api/matches", a.Access, ""); code != 200 {
-		t.Fatal("QA preservation fixture broke legacy history")
+	if code, _ := call("GET", "/api/matches", a.Access, ""); code != 400 {
+		t.Fatal("unscoped QA history was not closed")
 	}
 	ordered := func(session authSession, method, path, credential string, expected int) {
 		t.Helper()

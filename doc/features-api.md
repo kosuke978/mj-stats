@@ -415,3 +415,11 @@ PRで影響する利用側を列挙し、API/Web/DBの適用順と旧版との�
 | 同 `/seasons` | `{seasons:[{id,name,start_date,end_date,version}],next_cursor}` | UUID。日付はYYYY-MM-DDまたはNULL |
 
 JWT・有効セッション・設定済み本人を確認し、その永続IDと指定リーグのactiveなregistered所属を照合する。存在しないUUIDと非所属は同じ403。構文不正なUUID・許可外、重複または空の一覧queryは400。ページは既定20、1〜100。参加者・所属は名前/ID、rule/seasonは作成日時（NULL末尾）/IDの昇順。cursorを本人・リーグ・一覧種類・絞り込みに結び付ける。ページングのcursorは認可の代わりにしない。
+
+### 2-3の履歴と停止中の旧経路
+
+- `GET /api/leagues/{league_id}/matches` は `{matches,next_cursor}`。行は `id,league_id,rule_id,season_id,recorded_by,match_date,created_at,results`、結果は `user_id,display_name,raw_score,rank,point`。pointはDBに保存済みのnumberで、正確値の分数型への切替はStep 3。
+- 日時はUTCまたはNULLのまま。通常対局には現DB制約で対局日時が必須。旧行への日時補完は行わず、通常履歴にも含めない。結果の並びは保存済み順位と原ID。本人対応ID、取消状態、版は未導入。
+- `season` は省略/`all`、`unassigned`、UUID。所属確認後、指定のシーズンが当該リーグになければ404。 `status=all`（既定）/`valid` は現行行を返し、`cancelled` は空配列。limitとcursorは上記の契約で、日時/記録日時/IDの降順と絞り込みに結び付ける。
+- `GET /api/matches` は `league_id` 必須の移行用アダプタ。同じ認可・履歴契約を使い、全件取得はできない。
+- `POST /api/matches`、`POST /api/matches/calculate` は、認証・本人設定確認後に409 `RECORDING_UNAVAILABLE`。bodyに関係なく計算も書込みも行わない。Step 3の新規経路への切替時に旧POSTを410へ移す予定。

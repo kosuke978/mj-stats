@@ -38,7 +38,8 @@ function projectionQuery(columns) {
 }
 const files = readdirSync('supabase/migrations').filter(f => f.endsWith('.sql')).sort()
 const leagueFoundation = '20261118000000_league_membership_foundation.sql'
-const step22Files = files.slice(files.indexOf(leagueFoundation) + 1)
+const historyCutover = '20261118003000_league_history_cutover.sql'
+const step22Files = files.slice(files.indexOf(leagueFoundation) + 1, files.indexOf(historyCutover))
 const migration = file => readFileSync(`supabase/migrations/${file}`, 'utf8')
 // Isolated acceptance ledger using the Supabase history shape. Exact SQL and
 // version/order are checked here; this is not a production migration runner.
@@ -141,6 +142,11 @@ try {
     END $$;
     ROLLBACK;`)
   for (const file of step22Files) apply(file, applied)
+  const step22Query = projectionQuery(JSON.parse(sql(queries.columns)))
+  const beforeCutover = sql(step22Query)
+  apply(historyCutover, applied)
+  if (beforeCutover !== sql(step22Query)) throw new Error('2-3 policy migration changed 2-2 values')
+  console.log('PASS 2-3 policy cutover preserved all 2-2 columns and data')
   if (beforeStep22 !== sql(step21Query)) throw new Error('2-1 values changed')
   console.log('PASS 2-1 upgrade: normal and legacy rows unchanged; older NULL/inverted dates and numeric values preserved')
   if (step1Before !== sql(step1Query)) throw new Error('Step 1 values changed')

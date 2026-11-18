@@ -22,8 +22,6 @@ import (
 
 func router(database *sql.DB, verifier *auth.Verifier, origins []string) *gin.Engine {
 	guard := &auth.Guard{DB: database, Verifier: verifier}
-	matches := controllers.NewMatchController(database)
-	matches.Auth = guard
 	leagues := &controllers.LeagueController{DB: database}
 	users := &controllers.UserController{Auth: guard}
 	r := gin.New()
@@ -45,9 +43,10 @@ func router(database *sql.DB, verifier *auth.Verifier, origins []string) *gin.En
 	protected.GET("/users/me", users.GetMe)
 	protected.PATCH("/users/me", users.UpdateMe)
 	normal := protected.Group("", guard.RequireProfile())
-	normal.POST("/matches/calculate", matches.Calculate)
-	normal.POST("/matches", matches.CreateMatch)
-	normal.GET("/matches", matches.GetMatches)
+	normal.POST("/matches/calculate", controllers.RecordingUnavailable)
+	normal.POST("/matches", controllers.RecordingUnavailable)
+	normal.GET("/matches", leagues.LegacyHistory())
+	normal.GET("/leagues/:league_id/matches", leagues.History())
 	normal.GET("/leagues", leagues.List)
 	normal.GET("/leagues/:league_id", leagues.Detail())
 	for _, list := range []string{"participants", "members", "rules", "seasons"} {

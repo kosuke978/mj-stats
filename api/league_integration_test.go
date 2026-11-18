@@ -190,3 +190,96 @@ func testLeagueReferences(t *testing.T, ctx context.Context, admin *sql.DB, call
 	}
 	t.Log("Q-14/Q-16/Q-26 PASS: Auth, active membership and per-league role; filtered refs and scoped cursor")
 }
+
+func testLeagueHistory(t *testing.T, ctx context.Context, admin *sql.DB, call apiCall, a, b, participant, other string) {
+	f := createLeagueFixture(t, ctx, admin, participant, other)
+	const first = "e2a00000-0000-4000-8000-000000000002"
+	const second = "e2a00000-0000-4000-8000-000000000001"
+	const foreign = "e2a00000-0000-4000-8000-000000000003"
+	const old = "e2a00000-0000-4000-8000-000000000004"
+	insert := func(query string, args ...any) {
+		t.Helper()
+		if _, err := admin.ExecContext(ctx, query, args...); err != nil {
+			t.Fatalf("history fixture: %v", err)
+		}
+	}
+	var seasonB string
+	if err := admin.QueryRowContext(ctx, `INSERT INTO public.seasons(league_id,name) VALUES($1,'シーズンB') RETURNING id`, f.b).Scan(&seasonB); err != nil {
+		t.Fatal("foreign season fixture")
+	}
+	insert(`INSERT INTO public.matches(id,league_id,rule_id,season_id,recorded_by,match_date,created_at,data_origin) VALUES
+		($1,$5,$6,$7,$8,'2026-11-01T00:00:00+09',NULL,'app'),
+		($2,$5,$6,NULL,$8,'2026-11-01T00:00:00+09',NULL,'app'),
+		($3,$9,(SELECT id FROM rules WHERE league_id=$9),$11,$10,'2026-11-02T00:00:00+09',NULL,'app'),
+		($4,NULL,$6,$7,NULL,NULL,NULL,'legacy')`, first, second, foreign, old, f.a, f.rule, f.season, participant, f.b, other, seasonB)
+	// Old fixture shares a rule and season with A, but has no known league.
+	t.Cleanup(func() {
+		if _, err := admin.Exec(`DELETE FROM public.matches WHERE id=$1`, old); err != nil {
+			t.Errorf("cleanup legacy history fixture: %v", err)
+		}
+	})
+	insert(`INSERT INTO public.match_results(league_id,match_id,user_id,raw_score,final_point,rank)
+		VALUES($1,$2,$4,-100,-16.7,4),($1,$2,$5,35000,24.1,1),($3,$6,$7,29000,1.1,2)`,
+		f.a, first, f.b, participant, f.guest, foreign, other)
+
+	path := "/api/leagues/" + f.a + "/matches"
+	foreignPath := "/api/leagues/" + f.b + "/matches"
+	for _, id := range []string{f.left, f.removed, f.legacy, f.missing} {
+		verifyStatus(t, call, "GET", "/api/leagues/"+id+"/matches", a, 403, "LEAGUE_ACCESS_DENIED")
+	}
+	verifyStatus(t, call, "GET", path, b, 403, "LEAGUE_ACCESS_DENIED")
+	verifyStatus(t, call, "GET", path+"?season="+seasonB, b, 403, "LEAGUE_ACCESS_DENIED")
+	verifyStatus(t, call, "GET", path+"?season="+seasonB, a, 404, "NOT_FOUND")
+	verifyStatus(t, call, "GET", path+"?season="+f.missing, a, 404, "NOT_FOUND")
+	verifyStatus(t, call, "GET", path+"?season=1", a, 400, "INVALID_INPUT")
+	verifyStatus(t, call, "GET", "/api/matches", a, 400, "INVALID_INPUT")
+	verifyStatus(t, call, "GET", "/api/matches?league_id="+f.a, b, 403, "LEAGUE_ACCESS_DENIED")
+	verifyStatus(t, call, "GET", "/api/matches?league_id="+f.a+"&league_id="+f.b, a, 400, "INVALID_INPUT")
+	for suffix, ids := range map[string][]string{
+		"": {first, second}, "?season=all&status=valid": {first, second}, "?season=" + f.season: {first},
+		"?season=unassigned": {second}, "?status=cancelled": {},
+	} {
+		items := verifyStatus(t, call, "GET", path+suffix, a, 200, "")["matches"].([]any)
+		if len(items) != len(ids) {
+			t.Fatalf("history scope %s: wrong number of records", suffix)
+		}
+		for i, item := range items {
+			if item.(map[string]any)["id"] != ids[i] {
+				t.Fatal("wrong history ordering or cross-league result")
+			}
+		}
+	}
+
+	page := verifyStatus(t, call, "GET", path+"?limit=1", a, 200, "")
+	cursor := url.QueryEscape(page["next_cursor"].(string))
+	next := verifyStatus(t, call, "GET", path+"?limit=1&cursor="+cursor, a, 200, "")
+	if next["next_cursor"] != nil || next["matches"].([]any)[0].(map[string]any)["id"] != second {
+		t.Fatal("timestamp ties must paginate by ID with NULL created_at")
+	}
+	for _, target := range []string{foreignPath + "?cursor=" + cursor, path + "?season=unassigned&cursor=" + cursor, path + "?status=valid&cursor=" + cursor} {
+		verifyStatus(t, call, "GET", target, a, 400, "INVALID_INPUT")
+	}
+	foreignPage := verifyStatus(t, call, "GET", foreignPath, b, 200, "")
+	if len(foreignPage["matches"].([]any)) != 1 || foreignPage["matches"].([]any)[0].(map[string]any)["id"] != foreign {
+		t.Fatal("second user received another league's history")
+	}
+	// Same bearer must observe the new membership state on the next request.
+	insert(`UPDATE public.league_members SET status='active',ended_at=NULL WHERE league_id=$1 AND user_id=$2`, f.a, other)
+	verifyStatus(t, call, "GET", path+"?cursor="+cursor, b, 400, "INVALID_INPUT")
+	verifyStatus(t, call, "GET", path, b, 200, "")
+	insert(`UPDATE public.league_members SET status='removed',ended_at=now() WHERE league_id=$1 AND user_id=$2`, f.a, other)
+	verifyStatus(t, call, "GET", path, b, 403, "LEAGUE_ACCESS_DENIED")
+
+	if code, _ := call("PATCH", "/api/users/me", a, `{"name":"履歴に表示する現在名"}`); code != 200 {
+		t.Fatal("history rename")
+	}
+	item := verifyStatus(t, call, "GET", "/api/matches?league_id="+f.a, a, 200, "")["matches"].([]any)[0].(map[string]any)
+	result := item["results"].([]any)[1].(map[string]any)
+	if item["id"] != first || item["league_id"] != f.a || item["rule_id"] != f.rule || item["created_at"] != nil ||
+		item["match_date"] != "2026-10-31T15:00:00.000000Z" || result["user_id"] != participant ||
+		result["display_name"] != "履歴に表示する現在名" || result["rank"] != float64(4) ||
+		result["raw_score"] != float64(-100) || result["point"] != -16.7 {
+		t.Fatal("history must preserve timestamps, original ID and stored score, rank and numeric points")
+	}
+	t.Log("Q-14/Q-16/Q-22/Q-26 PASS: two users, app-only scoped history, 403/404, season modes, cursor scope/ties, rename and original result values")
+}

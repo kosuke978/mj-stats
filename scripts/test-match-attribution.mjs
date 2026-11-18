@@ -61,7 +61,7 @@ export function testMatchAttribution(sql, fingerprint) {
   reject('result membership in wrong league', appResult(matchA, ownerB), '23503')
   reject('attributed result cannot attach to legacy match', appResult(legacyMatch, ownerA), '23503')
   reject('NULL league cannot bypass app result check', `INSERT INTO public.match_results(match_id,user_id,raw_score,final_point,rank)
-      VALUES ('${matchB}','${ownerB}',-100,-16.7,4)`, '23503', api)
+      VALUES ('${matchB}','${ownerB}',-100,-16.7,4)`, '23503')
   reject('attributed result requires match and user', result(quote(leagueA), 'NULL', quote(ownerA)), '23514')
   reject('attributed result requires match and user', result(quote(leagueA), quote(matchA), 'NULL'), '23514')
   reject('same player cannot duplicate results', appResult(matchA, ownerA), '23505')
@@ -74,18 +74,18 @@ export function testMatchAttribution(sql, fingerprint) {
   reject('membership delete preserves recording/results',
     `DELETE FROM public.league_members WHERE league_id='${leagueA}' AND user_id='${ownerA}'`, '23503')
 
-  check('app rows hidden from old history',
-    "NOT EXISTS (SELECT 1 FROM public.matches WHERE data_origin='app') AND NOT EXISTS (SELECT 1 FROM public.match_results WHERE data_origin='app')", api)
+  check('history SELECT requires transaction scope',
+    'NOT EXISTS (SELECT 1 FROM public.matches) AND NOT EXISTS (SELECT 1 FROM public.match_results)', api)
+  const scoped = sql(`BEGIN; SET LOCAL ROLE ${api}; SET LOCAL mjstats.league_id='${leagueA}';
+    SELECT count(*)=2 AND bool_and(data_origin='app' AND league_id='${leagueA}') FROM public.matches;
+    SELECT count(*)=2 AND bool_and(data_origin='app' AND league_id='${leagueA}') FROM public.match_results;
+    COMMIT; SET ROLE ${api}; SELECT NOT EXISTS (SELECT 1 FROM public.matches) AND NOT EXISTS (SELECT 1 FROM public.match_results);`, 'supabase_admin')
+  if (scoped !== 'BEGIN\nSET\nSET\nt\nt\nCOMMIT\nSET\nt') throw new Error('Scoped history RLS or transaction reset failed')
   reject('no attributed match INSERT grant', match({}), '42501', api)
   reject('no attributed result INSERT grant', appResult(matchB, ownerB, leagueB), '42501', api)
-  reject('numeric legacy save cannot claim a normal rule', `INSERT INTO public.matches(rule_id) VALUES (${ruleA})`, '42501', api)
-  sql(`SET ROLE ${api};
-    WITH created AS (INSERT INTO public.matches(rule_id,season_id,created_at) VALUES ('${legacyRule}',NULL,now()) RETURNING id)
-    INSERT INTO public.match_results(match_id,user_id,raw_score,final_point,rank)
-      SELECT id,'${ownerA}',-100,-16.7,4 FROM created;`, 'supabase_admin')
-  check('old role can read and write legacy only',
-    `EXISTS (SELECT 1 FROM public.matches m JOIN public.match_results r ON r.match_id=m.id
-      WHERE m.rule_id='${legacyRule}' AND m.league_id IS NULL AND m.match_date IS NULL AND r.league_id IS NULL AND r.final_point=-16.7)`, api)
+  reject('old match INSERT also revoked', `INSERT INTO public.matches(rule_id,season_id,created_at) VALUES ('${legacyRule}',NULL,now())`, '42501', api)
+  reject('old result INSERT also revoked', `INSERT INTO public.match_results(match_id,user_id,raw_score,final_point,rank)
+    VALUES ('${legacyMatch}','${ownerA}',-100,-16.7,4)`, '42501', api)
   for (const table of ['matches', 'match_results']) {
     reject('Go cannot rewrite or delete history', `UPDATE public.${table} SET league_id=NULL`, '42501', api)
     reject('Go cannot rewrite or delete history', `DELETE FROM public.${table} WHERE false`, '42501', api)
