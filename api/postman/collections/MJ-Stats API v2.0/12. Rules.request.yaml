@@ -1,0 +1,7 @@
+$kind: http-request
+description: "available=true（既定）/false/all。limit・cursor可。"
+url: "{{base_url}}/api/leagues/{{league_id}}/rules?available=true&limit=20"
+method: GET
+headers:
+  Authorization: "Bearer {{access_token}}"
+order: 13000

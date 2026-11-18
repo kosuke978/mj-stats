@@ -1,7 +1,8 @@
 {
   "info": {
     "name": "Get Matches Collection",
-    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json",
+    "description": "2-3: 設定済みBearerで所属リーグの参照。旧計算・保存は停止中。"
   },
   "item": [
     {
@@ -9,7 +10,8 @@
       "request": {
         "method": "GET",
         "header": [],
-        "url": "{{base_url}}/api/matches"
+        "url": "{{base_url}}/api/leagues/{{league_id}}/matches?season=all&limit=20",
+        "description": "所属リーグの通常対局だけ。season: all/unassigned/UUID、status: all/valid/cancelled、limit: 1〜100、cursor: 同じ条件のnext_cursor。"
       },
       "response": []
     }

@@ -1,0 +1,7 @@
+$kind: http-request
+description: "UUID、開始・終了日はYYYY-MM-DDかNULL。limit・cursor可。"
+url: "{{base_url}}/api/leagues/{{league_id}}/seasons?limit=20"
+method: GET
+headers:
+  Authorization: "Bearer {{access_token}}"
+order: 14000

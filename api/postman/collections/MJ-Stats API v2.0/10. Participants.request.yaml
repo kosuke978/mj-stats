@@ -1,0 +1,7 @@
+$kind: http-request
+description: "有効な参加者。limit・cursor可。"
+url: "{{base_url}}/api/leagues/{{league_id}}/participants?limit=20"
+method: GET
+headers:
+  Authorization: "Bearer {{access_token}}"
+order: 11000

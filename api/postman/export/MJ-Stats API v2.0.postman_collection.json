@@ -1,7 +1,7 @@
 {
   "info": {
     "name": "MJ-Stats API v2.0",
-    "description": "Phase 2.5 Step 1: ES256/Auth-session protection. Complete display name before match APIs. Legacy match body/point contract is retained. Dedicated local DB only for writes.",
+    "description": "2-3: 設定済みBearerで所属リーグの参照。旧計算・保存は停止中。",
     "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
   },
   "item": [
@@ -18,7 +18,7 @@
       "response": []
     },
     {
-      "name": "1. Calculate Match Points",
+      "name": "1. Calculate Match Points (409)",
       "request": {
         "method": "POST",
         "header": [
@@ -27,21 +27,13 @@
             "value": "application/json"
           }
         ],
-        "body": {
-          "mode": "raw",
-          "raw": "{\n  \"players\": [\n    {\"player_id\": \"user_1\", \"raw_score\": 35000},\n    {\"player_id\": \"user_2\", \"raw_score\": 28000},\n    {\"player_id\": \"user_3\", \"raw_score\": 22000},\n    {\"player_id\": \"user_4\", \"raw_score\": 15000}\n  ]\n}",
-          "options": {
-            "raw": {
-              "language": "json"
-            }
-          }
-        },
-        "url": "{{base_url}}/api/matches/calculate"
+        "url": "{{base_url}}/api/matches/calculate",
+        "description": "名前設定済みは409 RECORDING_UNAVAILABLE。未認証は401。計算・保存の副作用なし。"
       },
       "response": []
     },
     {
-      "name": "2. Create Match",
+      "name": "2. Create Match (409)",
       "request": {
         "method": "POST",
         "header": [
@@ -50,16 +42,8 @@
             "value": "application/json"
           }
         ],
-        "body": {
-          "mode": "raw",
-          "raw": "{\n  \"rule_id\": \"99999999-9999-9999-9999-999999999999\",\n  \"season_id\": null,\n  \"results\": [\n    {\"player_id\":\"11111111-1111-1111-1111-111111111111\",\"raw_score\":35000,\"point\":45.0,\"rank\":1,\"is_yakuman\":false},\n    {\"player_id\":\"22222222-2222-2222-2222-222222222222\",\"raw_score\":28000,\"point\":8.0,\"rank\":2,\"is_yakuman\":false},\n    {\"player_id\":\"33333333-3333-3333-3333-333333333333\",\"raw_score\":22000,\"point\":-18.0,\"rank\":3,\"is_yakuman\":false},\n    {\"player_id\":\"44444444-4444-4444-4444-444444444444\",\"raw_score\":15000,\"point\":-35.0,\"rank\":4,\"is_yakuman\":false}\n  ]\n}",
-          "options": {
-            "raw": {
-              "language": "json"
-            }
-          }
-        },
-        "url": "{{base_url}}/api/matches"
+        "url": "{{base_url}}/api/matches",
+        "description": "名前設定済みは409 RECORDING_UNAVAILABLE。未認証は401。計算・保存の副作用なし。"
       },
       "response": []
     },
@@ -73,8 +57,8 @@
             "value": "application/json"
           }
         ],
-        "url": "{{base_url}}/api/matches",
-        "description": "対局履歴一覧を取得します。"
+        "url": "{{base_url}}/api/leagues/{{league_id}}/matches?season=all&limit=20",
+        "description": "所属リーグの通常対局だけ。season: all/unassigned/UUID、status: all/valid/cancelled、limit: 1〜100、cursor: 同じ条件のnext_cursor。"
       },
       "response": []
     },
@@ -168,6 +152,86 @@
           }
         }
       ]
+    },
+    {
+      "name": "8. My Leagues",
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": "{{base_url}}/api/leagues",
+        "description": "本人の有効所属一覧。"
+      },
+      "response": []
+    },
+    {
+      "name": "9. League",
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": "{{base_url}}/api/leagues/{{league_id}}",
+        "description": "対象リーグと本人のrole。非所属または存在しないUUIDは403。"
+      },
+      "response": []
+    },
+    {
+      "name": "10. Participants",
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": "{{base_url}}/api/leagues/{{league_id}}/participants?limit=20",
+        "description": "有効な参加者。limit・cursor可。"
+      },
+      "response": []
+    },
+    {
+      "name": "11. Members",
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": "{{base_url}}/api/leagues/{{league_id}}/members?limit=20",
+        "description": "legacyを除く所属。limit・cursor可。"
+      },
+      "response": []
+    },
+    {
+      "name": "12. Rules",
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": "{{base_url}}/api/leagues/{{league_id}}/rules?available=true&limit=20",
+        "description": "available=true（既定）/false/all。limit・cursor可。"
+      },
+      "response": []
+    },
+    {
+      "name": "13. Seasons",
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": "{{base_url}}/api/leagues/{{league_id}}/seasons?limit=20",
+        "description": "UUID、開始・終了日はYYYY-MM-DDかNULL。limit・cursor可。"
+      },
+      "response": []
+    },
+    {
+      "name": "14. History Without League (400)",
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": "{{base_url}}/api/matches",
+        "description": "旧全件経路の拒否。名前設定済みは400 INVALID_INPUT。"
+      },
+      "response": []
+    },
+    {
+      "name": "15. Scoped History Adapter",
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": "{{base_url}}/api/matches?league_id={{league_id}}&season=all&limit=20",
+        "description": "所属リーグの通常対局だけ。season: all/unassigned/UUID、status: all/valid/cancelled、limit: 1〜100、cursor: 同じ条件のnext_cursor。"
+      },
+      "response": []
     }
   ],
   "auth": {

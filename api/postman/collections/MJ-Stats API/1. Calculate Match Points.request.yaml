@@ -1,18 +1,7 @@
 $kind: http-request
+description: 名前設定済みは409 RECORDING_UNAVAILABLE。未認証は401。計算・保存の副作用なし。
 url: "{{base_url}}/api/matches/calculate"
 method: POST
 headers:
   Authorization: "Bearer {{access_token}}"
-  Content-Type: application/json
-body:
-  type: json
-  content: |-
-    {
-      "players": [
-        {"player_id": "user_1", "raw_score": 35000},
-        {"player_id": "user_2", "raw_score": 28000},
-        {"player_id": "user_3", "raw_score": 22000},
-        {"player_id": "user_4", "raw_score": 15000}
-      ]
-    }
 order: 2000

@@ -454,3 +454,22 @@ Q-16/Q-25のルール・シーズン部分は、専用ローカル内の使い�
 適用・書込みは専用ローカル `mj-stats-step1`（PostgreSQL 17.12）と内部の使い捨てDBだけ。元共有DB・既存管理QA・本番への適用、元コピーの再取得は未実施。既存.env・署名鍵・.localの既存証跡と退避設定を保持した。
 
 未実施はGoのリーグ認可・履歴制限、利用停止/保存の競合、指定シーズンの期間内保存検証、画面のタイムゾーン表示、ルールを読む計算と正確値保存、再送/取消/変更記録。上表のDB参照試験を各APIの合格に算入しない。Webと管理QAの受入は再実行していない。Safari・スマホ実機・実Auth鍵ローテーション、本番SMTP・復旧等の未確認も継続する。Step 2全体は途中。
+
+## Step 2 / 2-3の検証記録
+
+2-2のコミットを保持し、同じブランチ `feat/step-2-match-attribution` と [Draft PR #10](https://github.com/kosuke978/mj-stats/pull/10) で2-3を実装した。関連はD-11/D-12、D-41〜D-43、R-LEAGUE-01とR-HISTORY-01。Step 2全体は途中。
+
+| 実行した範囲 | 実測結果 | Git管理外の証跡 |
+| --- | --- | --- |
+| Q-14/Q-16/Q-26の参照 | 実Authの2利用者、複数リーグで6参照APIとリーグごとのroleを確認。未所属、left/removed/legacy、存在しないUUIDは403。ゲストは参加者候補。ruleの利用可否、UUID/NULLシーズン、子のスコープ、別リーグ・一覧・filterのcursor拒否を確認 | `.local/step2-3-reference-auth.log`、`.local/step2-3-cutover-auth.log` |
+| Q-14/Q-16/Q-22/Q-26の履歴 | 通常行のみ、通算/指定/未指定、空、同時刻のID順とNULL記録日時、別リーグseasonの404、退会状態の同じJWTでの再検証、別本人/条件のcursorと変換できない日時の400を確認。改名しても原IDと保存済み素点・順位・数値pointが一致 | `.local/step2-3-cutover-auth.log` |
+| Q-14/Q-17の旧経路 | 旧GETはleague_id必須で認可共通。旧POST計算・保存は409でusers/matches/match_resultsの照合値が不変。今回のQ-17は停止と認可境界のみ | 同上 |
+| Q-25のmigrationと権限 | 空DBへ全7本。合成・保存済み実コピーで増分と構造一致、旧全列/ID/参照を保全。実コピーは5参加者・1リーグ・5所属・1season・2rule・19対局・76結果。2-1の72件とowner競合、2-2の複合参照を再確認。Goロールはscopeなしで対局・結果0件、scopeありでも同じリーグのapp行だけ、commit後はscopeが消える。旧/通常INSERTと公開ロールを拒否 | `.local/step2-3-migrations-{synthetic,actual}.log` |
+| 専用ローカルの切替 | 旧Go停止を確認→増分1本→対応Go/Web起動。適用前後で7表の全行照合値一致、再適用は0件。隔離DBのraw再適用と履歴不整合を検知 | `.local/step2-3-local-{before,after}.sha`、`.local/step2-3-migration-{up,repeat}.log` |
+| Step 1回帰・Go | `go test ./...`、`go vet ./...`、実DB/Authの `TestStep1RealDBAuth` がPASS。6保護ルートで未認証・13種類の不正Auth拒否、名前未設定、並行me、D-41の権限とロック、localログアウト、Auth解除後の原ID・所属・参照保持を確認 | `.local/step2-3-go-{test,vet}.log`、`.local/step2-3-cutover-auth.log` |
+| WebとQ-26 | lint・型検査・本番build・単体3件がPASS。専用ローカルの本番ビルドとChromiumで9件PASS、メール期限切れ専用1件SKIP。最終Goで履歴の1件を再実行してPASS。390pxの直URL→ログイン復帰、SSR/no-store、シーズン・履歴ページング、リーグ/同ブラウザの本人切替、空・拒否・取得失敗からの再試行・停止表示。登録・更新Cookie・回復・ログアウト・プロセス再起動も回帰 | `.local/step2-3-web-{lint,types,build,unit}.log`、`.local/step2-3-browser-final.log`、`.local/step2-3-browser-final-go.log` |
+| Postman | JSON/YAML 25ファイルの構文とv2.0の7 GETテンプレートを確認。Postman UIの手動実行は未実施 | Git差分と上記Go/ブラウザのHTTP検証 |
+
+適用・書込みは専用ローカル `mj-stats-step1` とその隔離DB。元共有DB・本番・2-1未適用の既存管理QAは変更せず、元コピーも再取得していない。既存.env・署名鍵・既存証跡と退避設定は保持した。
+
+2-4以降は作成・検索・番号解決・招待・参加。Step 3にはリーグ付き計算・保存、ゲスト/本人対応、正確値のn/d、操作ID/再送、結果数・合計等の制約とロック、利用停止rule・指定シーズンの期間検証を引き継ぐ。これらが揃うまでは通常INSERTを有効化しない。旧POSTの201・プレビューは意図的に停止したためPASSに含めない。管理QA総合受入、Safari/スマホ実機・前メジャー版、実Auth鍵ローテーション、本番SMTP/復旧等の未確認は継続する。

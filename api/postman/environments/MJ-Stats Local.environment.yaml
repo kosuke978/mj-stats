@@ -7,3 +7,6 @@ values:
     value: ""
     enabled: true
     type: secret
+  - key: league_id
+    value: ""
+    enabled: true

@@ -1,0 +1,7 @@
+$kind: http-request
+description: "所属リーグの通常対局だけ。season: all/unassigned/UUID、status: all/valid/cancelled、limit: 1〜100、cursor: 同じ条件のnext_cursor。"
+url: "{{base_url}}/api/matches?league_id={{league_id}}&season=all&limit=20"
+method: GET
+headers:
+  Authorization: "Bearer {{access_token}}"
+order: 16000

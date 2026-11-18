@@ -1,5 +1,5 @@
 $kind: http-request
-url: "{{base_url}}/api/matches"
+url: "{{base_url}}/api/leagues/{{league_id}}/matches?season=all&limit=20"
 method: GET
 order: 1000
 headers:

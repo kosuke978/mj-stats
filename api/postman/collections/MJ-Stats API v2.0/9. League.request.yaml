@@ -1,0 +1,7 @@
+$kind: http-request
+description: "対象リーグと本人のrole。非所属または存在しないUUIDは403。"
+url: "{{base_url}}/api/leagues/{{league_id}}"
+method: GET
+headers:
+  Authorization: "Bearer {{access_token}}"
+order: 10000

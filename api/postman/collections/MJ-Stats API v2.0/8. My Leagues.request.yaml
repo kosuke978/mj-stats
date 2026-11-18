@@ -1,0 +1,7 @@
+$kind: http-request
+description: "本人の有効所属一覧。"
+url: "{{base_url}}/api/leagues"
+method: GET
+headers:
+  Authorization: "Bearer {{access_token}}"
+order: 9000

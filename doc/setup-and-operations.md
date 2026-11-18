@@ -42,7 +42,6 @@ GoのDATABASE_URLは専用mjstats_apiを使う。所有者/BYPASSRLSロールを
 NEXT_PUBLIC_API_URL=http://localhost:8080
 NEXT_PUBLIC_SUPABASE_URL=https://YOUR_PROJECT_REF.supabase.co
 NEXT_PUBLIC_SUPABASE_ANON_KEY=YOUR_PUBLIC_ANON_KEY
-NEXT_PUBLIC_RULE_ID=99999999-9999-9999-9999-999999999999
 APP_ORIGIN=http://localhost:3000
 AUTH_FLOW_SECRET=REPLACE_WITH_RANDOM_SECRET_AT_LEAST_32_CHARACTERS
 ```
@@ -54,7 +53,6 @@ AUTH_FLOW_SECRET=REPLACE_WITH_RANDOM_SECRET_AT_LEAST_32_CHARACTERS
 | `NEXT_PUBLIC_SUPABASE_ANON_KEY` | 公開クライアント用キー。JWT署名用secret・DBパスワード・service roleを入れない |
 | `APP_ORIGIN` | サーバー専用の正規Web origin。確認URLと安全なリダイレクト/同一origin検証へ使用 |
 | `AUTH_FLOW_SECRET` | サーバーだけに持つ32文字以上のランダム秘密値。10分の回復確認Cookieを署名。公開しない |
-| `NEXT_PUBLIC_RULE_ID` | 保存対象の実在するrule UUID。例はseed用ID。Step 2で固定依存を解消する |
 
 `NEXT_PUBLIC_` はブラウザへ公開される値である。DB接続先とAuthのプロジェクトを揃え、別環境のUIDやルールを混ぜない。値を変えたら開発サーバーを再起動する。本番向けの公開変数はビルド時の値にも注意する。
 
@@ -222,32 +220,15 @@ DB接続確認：
 curl -i http://localhost:8080/api/health
 ```
 
-計算確認（DB書き込みなし）：
+2-3の確認は同じ専用ローカルAuthの本人Bearerを使用する。access tokenのローカル値は履歴やログへ残さない。
 
-```bash
-curl -i -X POST http://localhost:8080/api/matches/calculate \
-  -H 'Content-Type: application/json' \
-  -d '{"players":[{"player_id":"p1","raw_score":40000},{"player_id":"p2","raw_score":30000},{"player_id":"p3","raw_score":20000},{"player_id":"p4","raw_score":10000}]}'
-```
-
-Step 1ブランチではBearerなしのこの呼び出しは401となる。正しいJWTと名前設定済みなら200でポイント `50 / 10 / -20 / -40` を返す旧契約を維持する。認証を外して旧手順へ合わせない。
-
-画面と保存の確認は専用DBで次の順に行う。
-
-1. `/login` からテストアカウントでログインし、`/matches` への遷移を確認する。
-2. `/matches/new` で異なる登録済みメンバー4名と合計10万点を入力し、計算プレビューを確認する。
-3. 保存後、DBの `matches` 1件と `match_results` 4件、履歴表示を確認する。現在はログイン者が選択メンバーや記録者に紐付く保証はない。
-4. 入力不足・重複メンバー・不正合計・同点・ゲストでのプレビューと保存拒否を確認する。ゲスト保存拒否は現状の制限であり最終要件ではない。
-
-この確認が成功しても、JWT署名検証、リーグ権限、Go側の合計点検証まで完成したとは判断しない。
+1. `/login` → `/matches` で有効所属を確認し、リーグを選ぶ。空の所属は案内を表示する。
+2. `/matches/league/{league_id}` で履歴・シーズン・次ページを確認する。別の所属へ切り替え、別リーグの成績が混ざらないことを確認する。
+3. `/matches/new` は停止表示。名前設定済み本人でも旧計算・保存POSTは409、scopeなし旧GETは400。通常対局INSERTも権限で拒否する。
 
 ### Postman
 
-Importする基本セットは、[API v2.0 collection](../api/postman/export/MJ-Stats%20API%20v2.0.postman_collection.json) と [local environment](../api/postman/export/MJ-Stats.local.postman_environment.json)。health → calculate → create → get matchesを確認できる。
-
-Step 1でcollection/YAMLのURLを `{{base_url}}` へ統一した。旧 [MJ-Stats collection](../api/postman/export/MJ-Stats.postman_collection.json) は `{{base_url}}` を使うが、履歴取得を含まない。Step 1でv2.0 collectionへme/PATCH/401ケースを追加し、全collectionの保護APIへBearerを付けた。
-
-v2.0ではhealth → me → 名前設定 → calculate/create/getの順で確認する。JWTなし・不正JWTの401も含む。Postman UIでの実行自体は今回未実施。access tokenはPostmanのローカル値として保持し、保存・exportする値には含めない。正常リクエストだけでなく、JWTなし・不正署名・期限切れ等を確認する。
+[Postman手順](../api/postman/README.md)からv2.0 collectionとlocal environmentを取り込む。health → me → 名前設定 → My Leagues → 選択したIDで参照・履歴。旧経路の停止と401/403/404も確認できる。
 
 ## Step 1以降の運用確認
 

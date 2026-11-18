@@ -1,8 +1,37 @@
 # 実装済み機能とAPI契約
 
-前半は現行実装、後半はPhase 2.5全体の目標。Step 1は完了承認済み、2-1はPR #9でマージ済み。2-2でルール・シーズン・対局帰属のDB基盤を追加した。旧保存のbody、数値point、固定ルール計算を維持する。旧履歴はlegacy行を返し、`match_date`がNULLなら`created_at`を旧JSONの`match_date`に使う。DBの実対局日時はNULLのまま。アプリ起源の対局は旧履歴から隔離し、2-3でリーグ認可付き履歴へ切り替える。検証は [品質文書](quality-and-acceptance.md)、工程は [ロードマップ](product-roadmap.md) を参照する。
+Step 1は完了承認済み、2-1はPR #9でマージ済み。PR #10の同じブランチで2-2のDB基盤に続いて2-3のリーグ認可・参照・履歴切替を実装した。現在の対局APIと画面は以下の2-3節を正本とする。Step 2全体は途中。
 
-## 画面と利用フロー
+## 2-3の参照API実装
+
+| GET | 応答 | 範囲 |
+| --- | --- | --- |
+| `/api/leagues` | `{leagues:[{id,name,group_number,my_role}]}` | 本人の有効所属 |
+| `/api/leagues/{league_id}` | `{league:{id,name,group_number,my_role}}` | 対象リーグでの本人role |
+| 同 `/participants` | `{participants:[{id,name,kind,version}],next_cursor}` | 有効な登録参加者・ゲスト |
+| 同 `/members` | `{members:[{user_id,name,kind,role,status,version}],next_cursor}` | active/left/removedの所属。legacyは除外 |
+| 同 `/rules` | `{rules:[{id,name,default_points,return_points,uma,calculation_version,available,version}],next_cursor}` | `available=true` が既定。`false`、`all` も指定可。legacy版は除外 |
+| 同 `/seasons` | `{seasons:[{id,name,start_date,end_date,version}],next_cursor}` | UUID。日付はYYYY-MM-DDまたはNULL |
+
+JWT・有効セッション・設定済み本人を確認し、その永続IDと指定リーグのactiveなregistered所属を照合する。存在しないUUIDと非所属は同じ403。構文不正なUUID・許可外、重複または空の一覧queryは400。ページは既定20、1〜100。参加者・所属は名前/ID、rule/seasonは作成日時（NULL末尾）/IDの昇順。cursorを本人・リーグ・一覧種類・絞り込みに結び付ける。ページングのcursorは認可の代わりにしない。
+
+### 2-3の履歴と停止中の旧経路
+
+- `GET /api/leagues/{league_id}/matches` は `{matches,next_cursor}`。行は `id,league_id,rule_id,season_id,recorded_by,match_date,created_at,results`、結果は `user_id,display_name,raw_score,rank,point`。pointはDBに保存済みのnumberで、正確値の分数型への切替はStep 3。
+- 日時はUTCまたはNULLのまま。通常対局には現DB制約で対局日時が必須。旧行への日時補完は行わず、通常履歴にも含めない。結果の並びは保存済み順位と原ID。本人対応ID、取消状態、版は未導入。
+- `season` は省略/`all`、`unassigned`、UUID。所属確認後、指定のシーズンが当該リーグになければ404。 `status=all`（既定）/`valid` は現行行を返し、`cancelled` は空配列。limitとcursorは上記の契約で、日時/記録日時/IDの降順と絞り込みに結び付ける。
+- `GET /api/matches` は `league_id` 必須の移行用アダプタ。同じ認可・履歴契約を使い、全件取得はできない。
+- `POST /api/matches`、`POST /api/matches/calculate` は、認証・本人設定確認後に409 `RECORDING_UNAVAILABLE`。bodyに関係なく計算も書込みも行わない。Step 3の新規経路への切替時に旧POSTを410へ移す予定。
+
+### 2-3のWeb
+
+`/matches` は所属リーグ一覧。選択すると `/matches/league/{league_id}` がサーバー側の本人Bearerでリーグ詳細、シーズン候補と履歴を取得する。シーズンと次ページはそのリーグのURLに保持し、リーグや本人の切替で引き継がない。空の所属・空の履歴・閲覧拒否・取得失敗・記録停止を区別する。未ログインの正規UUID付き直URLはログイン後に戻り、所属を確認する。日時を日本時間で表示し、対局日時が不明なら記録日時か日時不明を示す。`/matches/new` は計算・記録の利用停止を案内する。
+
+## Step 1〜2-2時点の仕様資料
+
+認証・本人情報の仕様は引き続き利用する。この節の固定選択肢、計算・保存、全件履歴は2-2までの旧対局経路の記録。現状は冒頭の2-3節を使う。
+
+### 画面と利用フロー（当時）
 
 | URL | 実装されていること | 制限・未完了 |
 | --- | --- | --- |
@@ -43,7 +72,7 @@
 
 ### 対局入力の詳細
 
-根拠：[MatchInputForm.tsx](../web/src/components/match/MatchInputForm.tsx)。
+当時の実装は2-2のコミット `1766d4d` にある旧入力フォームを参照。
 
 - 登録メンバーの選択肢はseedと同じUUIDの5名。同一登録メンバーの重複選択を拒否する。
 - 1人目に「起家」と表示するが、座順をAPI・DBへ保存する実装はない。
@@ -57,7 +86,7 @@
 
 ## ポイント計算の現在の仕様
 
-根拠：[calculateResults](../api/controllers/match_controller.go)。DBの `rules` は参照せず、25,000点持ち・30,000点返し・ウマ `+20/+10/-10/-20`・総オカ20ポイント相当をハードコードしている。「Mリーグ公式規則を完全に実装した」という意味ではない。
+当時の実装は2-2のコミット `1766d4d` にある `calculateResults` を参照。DBの `rules` は参照せず、25,000点持ち・30,000点返し・ウマ `+20/+10/-10/-20`・総オカ20ポイント相当をハードコードしている。「Mリーグ公式規則を完全に実装した」という意味ではない。
 
 ```text
 基礎ポイント = (raw_score - 30,000) / 1,000
@@ -402,24 +431,3 @@ localログアウトはSupabaseへlocalを明示し、成功後に同じセッ�
 | 項目削除・改名・必須化・エラー形式変更 | 旧クライアントの解釈・送信が成立しない可能性がある | 利用者一覧、適用順、互換期間または同時反映、対象Qケース |
 
 PRで影響する利用側を列挙し、API/Web/DBの適用順と旧版との同時稼働の可否を説明する。互換性のある変更と、同時更新が必要な変更を同じ手順で扱わない。バージョン付きAPIや互換期間を導入するかは、実際の外部クライアント・運用環境に応じて判断する。
-
-## 2-3の参照API実装
-
-| GET | 応答 | 範囲 |
-| --- | --- | --- |
-| `/api/leagues` | `{leagues:[{id,name,group_number,my_role}]}` | 本人の有効所属 |
-| `/api/leagues/{league_id}` | `{league:{id,name,group_number,my_role}}` | 対象リーグでの本人role |
-| 同 `/participants` | `{participants:[{id,name,kind,version}],next_cursor}` | 有効な登録参加者・ゲスト |
-| 同 `/members` | `{members:[{user_id,name,kind,role,status,version}],next_cursor}` | active/left/removedの所属。legacyは除外 |
-| 同 `/rules` | `{rules:[{id,name,default_points,return_points,uma,calculation_version,available,version}],next_cursor}` | `available=true` が既定。`false`、`all` も指定可。legacy版は除外 |
-| 同 `/seasons` | `{seasons:[{id,name,start_date,end_date,version}],next_cursor}` | UUID。日付はYYYY-MM-DDまたはNULL |
-
-JWT・有効セッション・設定済み本人を確認し、その永続IDと指定リーグのactiveなregistered所属を照合する。存在しないUUIDと非所属は同じ403。構文不正なUUID・許可外、重複または空の一覧queryは400。ページは既定20、1〜100。参加者・所属は名前/ID、rule/seasonは作成日時（NULL末尾）/IDの昇順。cursorを本人・リーグ・一覧種類・絞り込みに結び付ける。ページングのcursorは認可の代わりにしない。
-
-### 2-3の履歴と停止中の旧経路
-
-- `GET /api/leagues/{league_id}/matches` は `{matches,next_cursor}`。行は `id,league_id,rule_id,season_id,recorded_by,match_date,created_at,results`、結果は `user_id,display_name,raw_score,rank,point`。pointはDBに保存済みのnumberで、正確値の分数型への切替はStep 3。
-- 日時はUTCまたはNULLのまま。通常対局には現DB制約で対局日時が必須。旧行への日時補完は行わず、通常履歴にも含めない。結果の並びは保存済み順位と原ID。本人対応ID、取消状態、版は未導入。
-- `season` は省略/`all`、`unassigned`、UUID。所属確認後、指定のシーズンが当該リーグになければ404。 `status=all`（既定）/`valid` は現行行を返し、`cancelled` は空配列。limitとcursorは上記の契約で、日時/記録日時/IDの降順と絞り込みに結び付ける。
-- `GET /api/matches` は `league_id` 必須の移行用アダプタ。同じ認可・履歴契約を使い、全件取得はできない。
-- `POST /api/matches`、`POST /api/matches/calculate` は、認証・本人設定確認後に409 `RECORDING_UNAVAILABLE`。bodyに関係なく計算も書込みも行わない。Step 3の新規経路への切替時に旧POSTを410へ移す予定。

@@ -1,0 +1,7 @@
+$kind: http-request
+description: "旧全件経路の拒否。名前設定済みは400 INVALID_INPUT。"
+url: "{{base_url}}/api/matches"
+method: GET
+headers:
+  Authorization: "Bearer {{access_token}}"
+order: 15000

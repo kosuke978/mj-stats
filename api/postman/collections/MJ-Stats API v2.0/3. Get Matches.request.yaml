@@ -1,6 +1,6 @@
 $kind: http-request
-description: 対局履歴一覧を取得します。
-url: "{{base_url}}/api/matches"
+description: "所属リーグの通常対局だけ。season: all/unassigned/UUID、status: all/valid/cancelled、limit: 1〜100、cursor: 同じ条件のnext_cursor。"
+url: "{{base_url}}/api/leagues/{{league_id}}/matches?season=all&limit=20"
 method: GET
 headers:
   Authorization: "Bearer {{access_token}}"
