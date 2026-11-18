@@ -5,7 +5,8 @@ import { readFileSync, readdirSync } from 'node:fs'
 import { testLeagueFoundation, testLeagueMigration } from './test-league-foundation.mjs'
 import { fixtureID, leagueA, normalLeagues, ownerA, testRuleSeasonFoundation } from './test-rule-season-foundation.mjs'
 import { testMatchAttribution } from './test-match-attribution.mjs'
-import { creationEventShape, testLeagueCreationEvents } from './test-league-creation-events.mjs'
+import { eventTableShape, testLeagueCreationEvents } from './test-league-creation-events.mjs'
+import { testLeagueInvites } from './test-league-invites.mjs'
 const container = 'supabase_db_mj-stats-step1'
 const info = JSON.parse(execFileSync('docker', ['inspect', container], { encoding: 'utf8' }))[0]
 if (info.Config.Labels['com.supabase.cli.project'] !== 'mj-stats-step1' || !info.NetworkSettings.Ports['5432/tcp'].some(p => p.HostPort === '55422')) throw new Error('Refusing unknown environment')
@@ -41,6 +42,7 @@ const files = readdirSync('supabase/migrations').filter(f => f.endsWith('.sql'))
 const leagueFoundation = '20261118000000_league_membership_foundation.sql'
 const historyCutover = '20261118003000_league_history_cutover.sql'
 const leagueCreationEvents = '20261118004000_league_creation_events.sql'
+const leagueInvites = '20261118005000_league_invites.sql'
 const step22Files = files.slice(files.indexOf(leagueFoundation) + 1, files.indexOf(historyCutover))
 const migration = file => readFileSync(`supabase/migrations/${file}`, 'utf8')
 // Isolated acceptance ledger using the Supabase history shape. Exact SQL and
@@ -76,7 +78,7 @@ try {
   stage = 'empty full application'
   for (const file of files) apply(file, applied)
   const emptyShape = Object.fromEntries(Object.entries(queries).map(([name,q]) => [name, JSON.parse(sql(q))]))
-  const emptyEventShape = JSON.parse(sql(creationEventShape))
+  const emptyInviteShapes = ['league_events', 'league_invites'].map(table => JSON.parse(sql(eventTableShape(table))))
   console.log('PASS empty database: all migrations + complete history applied as postgres')
   // Roll back this test-only schema rebuild in a disposable database, never the
   // local stack's postgres database. Cluster roles and Auth metadata stay intact.
@@ -152,9 +154,32 @@ try {
   console.log('PASS 2-3 policy cutover preserved all 2-2 columns and data')
   const beforeCreation = sql(step22Query)
   apply(leagueCreationEvents, applied)
-  if (sql(step22Query) !== beforeCreation || sql('SELECT count(*) FROM public.league_events') !== '0'
-    || !sameJSON(emptyEventShape, JSON.parse(sql(creationEventShape)))) throw new Error('2-4 rows or schema differ')
-  console.log('PASS 2-4 event migration preserves old values and matches empty schema')
+  if (sql(step22Query) !== beforeCreation || sql('SELECT count(*) FROM public.league_events') !== '0') throw new Error('2-4 rows differ')
+  console.log('PASS 2-4 event migration preserves old values')
+  // Upgrade a populated 2-4 creation ledger and compare its old values and references.
+  const beforeInviteDDL = migration(leagueInvites).replace('BEGIN;', '').replace(/COMMIT;\s*$/, '')
+  sql(`BEGIN; ${normalLeagues}
+    INSERT INTO public.rules(id,league_id,name,uma_1,uma_2,uma_3,uma_4,calculation_version,available)
+      VALUES ('${fixtureID(77)}','${leagueA}','initial rule',20,10,-10,-20,'exact_v1',true);
+    INSERT INTO public.league_events(league_id,actor_id,operation,client_request_id,target,version,request_hash,after)
+      VALUES ('${leagueA}','${ownerA}','league.create','${fixtureID(78)}','${leagueA}',1,repeat('a',64),
+        jsonb_build_object('initial_rule_id','${fixtureID(77)}'));
+    SET CONSTRAINTS ALL IMMEDIATE;
+    CREATE TEMP TABLE before_invite_ddl AS SELECT to_jsonb(e) AS row FROM public.league_events e;
+    ${beforeInviteDDL}
+    DO $$ BEGIN
+      IF EXISTS (SELECT 1 FROM public.league_events WHERE invite_id IS NOT NULL)
+        OR (SELECT to_jsonb(e)-'invite_id' FROM public.league_events e)
+          IS DISTINCT FROM (SELECT row FROM before_invite_ddl) THEN
+        RAISE EXCEPTION '2-4 creation event changed';
+      END IF;
+    END $$;
+    ROLLBACK;`)
+  const beforeInvites = sql(step22Query)
+  apply(leagueInvites, applied)
+  if (sql(step22Query) !== beforeInvites || sql('SELECT count(*) FROM public.league_events') !== '0'
+    || !sameJSON(emptyInviteShapes, ['league_events', 'league_invites'].map(table => JSON.parse(sql(eventTableShape(table)))))) throw new Error('2-5 rows or schema differ')
+  console.log('PASS 2-5 invitation migration preserves old values and 2-4 creation event; empty/incremental invite and event schemas match')
 
   if (beforeStep22 !== sql(step21Query)) throw new Error('2-1 values changed')
   console.log('PASS 2-1 upgrade: normal and legacy rows unchanged; older NULL/inverted dates and numeric values preserved')
@@ -199,6 +224,8 @@ try {
   testMatchAttribution(sql, fullRowQuery)
   stage = 'creation event constraints and permissions'
   testLeagueCreationEvents(sql, fullRowQuery)
+  stage = 'invitation constraints and permissions'
+  testLeagueInvites(sql, fullRowQuery)
   if (!snapshot) console.log('Actual-copy acceptance is separate: rerun with --snapshot <read-only-export.json>.')
 } catch (error) {
   // SQLSTATE only: never emit row values, query text or connection details.

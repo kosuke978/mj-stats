@@ -1,16 +1,18 @@
 import { dbAssertions, fixtureID, leagueA, leagueB, ownerA, ownerB } from './test-rule-season-foundation.mjs'
 
-export const creationEventShape = `
+export const eventTableShape = (table) => `
   SELECT jsonb_build_object(
     'columns', (SELECT jsonb_agg(to_jsonb(c) ORDER BY ordinal_position) FROM information_schema.columns c
-      WHERE table_schema='public' AND table_name='league_events'),
+      WHERE table_schema='public' AND table_name='${table}'),
     'constraints', (SELECT jsonb_agg(pg_get_constraintdef(oid) ORDER BY conname)
-      FROM pg_constraint WHERE conrelid='public.league_events'::regclass),
+      FROM pg_constraint WHERE conrelid='public.${table}'::regclass),
+    'indexes', (SELECT jsonb_agg(to_jsonb(i) ORDER BY indexname) FROM pg_indexes i
+      WHERE schemaname='public' AND tablename='${table}'),
     'policies', (SELECT jsonb_agg(to_jsonb(p) ORDER BY policyname)
-      FROM pg_policies p WHERE schemaname='public' AND tablename='league_events'),
+      FROM pg_policies p WHERE schemaname='public' AND tablename='${table}'),
     'grants', (SELECT jsonb_agg(to_jsonb(g) ORDER BY grantee,column_name,privilege_type)
-      FROM information_schema.column_privileges g WHERE table_schema='public' AND table_name='league_events'),
-    'rls', (SELECT relrowsecurity FROM pg_class WHERE oid='public.league_events'::regclass)
+      FROM information_schema.column_privileges g WHERE table_schema='public' AND table_name='${table}'),
+    'rls', (SELECT relrowsecurity FROM pg_class WHERE oid='public.${table}'::regclass)
   );`
 
 export function testLeagueCreationEvents(sql, fingerprint) {
