@@ -87,6 +87,12 @@ app対局はリーグ・rule・記録者・timestamptzの対局日時が必須�
 
 増分 `20261118003000_league_history_cutover.sql` は行を変更せず、未スコープSELECTから通常・legacy双方を隠し、Goの旧INSERT権限とpolicyを取り消す。Step 3で計算・保存の認可と正確値・操作ID等が揃うまで対局/結果のINSERTを許可しない。環境の切替順は [運用](setup-and-operations.md#step-2--2-3のローカル切替) を参照。
 
+## Step 2 / 2-4の作成記録
+
+`20261118004000_league_creation_events.sql` は設計済みの `league_events` のうち、作成と再送に必要な列を追加する。作成操作の一意性は `(actor_id,operation,client_request_id)`、元の初期ルールは記録の `after.initial_rule_id` から生成したUUIDと複合FKで保証し、同じリーグのruleを参照する。既存7表の値には手を加えない。
+
+Goのサービスロールはトランザクション内で認証済み本人の永続IDを設定し、その本人の `league.create` だけを列限定で参照・追記する。イベントの変更・削除や公開ロールの操作は許可しない。他のイベント種別の書込みや運営向けの閲覧は、対応する後続機能で権限を追加する。
+
 ## 7つのコアテーブル
 
 以下は各テーブルの役割と現在のAPIとの接続状況。実DBの列・型・制約・RLSは後述の調査結果で確認済み。テーブルの存在と、リーグ等の機能をアプリから運用できることは区別する。

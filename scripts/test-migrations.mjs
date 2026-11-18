@@ -5,6 +5,7 @@ import { readFileSync, readdirSync } from 'node:fs'
 import { testLeagueFoundation, testLeagueMigration } from './test-league-foundation.mjs'
 import { fixtureID, leagueA, normalLeagues, ownerA, testRuleSeasonFoundation } from './test-rule-season-foundation.mjs'
 import { testMatchAttribution } from './test-match-attribution.mjs'
+import { creationEventShape, testLeagueCreationEvents } from './test-league-creation-events.mjs'
 const container = 'supabase_db_mj-stats-step1'
 const info = JSON.parse(execFileSync('docker', ['inspect', container], { encoding: 'utf8' }))[0]
 if (info.Config.Labels['com.supabase.cli.project'] !== 'mj-stats-step1' || !info.NetworkSettings.Ports['5432/tcp'].some(p => p.HostPort === '55422')) throw new Error('Refusing unknown environment')
@@ -39,6 +40,7 @@ function projectionQuery(columns) {
 const files = readdirSync('supabase/migrations').filter(f => f.endsWith('.sql')).sort()
 const leagueFoundation = '20261118000000_league_membership_foundation.sql'
 const historyCutover = '20261118003000_league_history_cutover.sql'
+const leagueCreationEvents = '20261118004000_league_creation_events.sql'
 const step22Files = files.slice(files.indexOf(leagueFoundation) + 1, files.indexOf(historyCutover))
 const migration = file => readFileSync(`supabase/migrations/${file}`, 'utf8')
 // Isolated acceptance ledger using the Supabase history shape. Exact SQL and
@@ -74,6 +76,7 @@ try {
   stage = 'empty full application'
   for (const file of files) apply(file, applied)
   const emptyShape = Object.fromEntries(Object.entries(queries).map(([name,q]) => [name, JSON.parse(sql(q))]))
+  const emptyEventShape = JSON.parse(sql(creationEventShape))
   console.log('PASS empty database: all migrations + complete history applied as postgres')
   // Roll back this test-only schema rebuild in a disposable database, never the
   // local stack's postgres database. Cluster roles and Auth metadata stay intact.
@@ -147,6 +150,12 @@ try {
   apply(historyCutover, applied)
   if (beforeCutover !== sql(step22Query)) throw new Error('2-3 policy migration changed 2-2 values')
   console.log('PASS 2-3 policy cutover preserved all 2-2 columns and data')
+  const beforeCreation = sql(step22Query)
+  apply(leagueCreationEvents, applied)
+  if (sql(step22Query) !== beforeCreation || sql('SELECT count(*) FROM public.league_events') !== '0'
+    || !sameJSON(emptyEventShape, JSON.parse(sql(creationEventShape)))) throw new Error('2-4 rows or schema differ')
+  console.log('PASS 2-4 event migration preserves old values and matches empty schema')
+
   if (beforeStep22 !== sql(step21Query)) throw new Error('2-1 values changed')
   console.log('PASS 2-1 upgrade: normal and legacy rows unchanged; older NULL/inverted dates and numeric values preserved')
   if (step1Before !== sql(step1Query)) throw new Error('Step 1 values changed')
@@ -188,6 +197,8 @@ try {
   testRuleSeasonFoundation(sql, fullRowQuery)
   stage = 'match attribution constraints and permissions'
   testMatchAttribution(sql, fullRowQuery)
+  stage = 'creation event constraints and permissions'
+  testLeagueCreationEvents(sql, fullRowQuery)
   if (!snapshot) console.log('Actual-copy acceptance is separate: rerun with --snapshot <read-only-export.json>.')
 } catch (error) {
   // SQLSTATE only: never emit row values, query text or connection details.
