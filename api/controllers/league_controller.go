@@ -151,8 +151,11 @@ func timestampKey(s string, nullKey string) bool {
 	if s == nullKey {
 		return true
 	}
-	_, err := time.Parse(time.RFC3339Nano, s)
-	return err == nil
+	// Match the UTC format emitted by the SELECT. Reject values such as
+	// year 0000 before they reach the PostgreSQL timestamptz cast.
+	const format = "2006-01-02T15:04:05.000000Z"
+	instant, err := time.Parse(format, s)
+	return err == nil && instant.Year() > 0 && instant.Format(format) == s
 }
 
 func pageInput(c *gin.Context, q url.Values, l league, list, filter string, keys func(pageCursor) bool) (int, pageCursor, bool) {

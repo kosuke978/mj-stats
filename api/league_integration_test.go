@@ -3,7 +3,9 @@ package main
 import (
 	"context"
 	"database/sql"
+	"encoding/base64"
 	"net/url"
+	"strings"
 	"testing"
 )
 
@@ -252,6 +254,15 @@ func testLeagueHistory(t *testing.T, ctx context.Context, admin *sql.DB, call ap
 
 	page := verifyStatus(t, call, "GET", path+"?limit=1", a, 200, "")
 	cursor := url.QueryEscape(page["next_cursor"].(string))
+	decoded, err := base64.RawURLEncoding.DecodeString(page["next_cursor"].(string))
+	if err != nil {
+		t.Fatal("history cursor encoding")
+	}
+	// A string can parse as a Go date but still be invalid for timestamptz.
+	badDate := strings.Replace(string(decoded), "2026-", "0000-", 1)
+	badCursor := base64.RawURLEncoding.EncodeToString([]byte(badDate))
+	verifyStatus(t, call, "GET", path+"?cursor="+badCursor, a, 400, "INVALID_INPUT")
+
 	next := verifyStatus(t, call, "GET", path+"?limit=1&cursor="+cursor, a, 200, "")
 	if next["next_cursor"] != nil || next["matches"].([]any)[0].(map[string]any)["id"] != second {
 		t.Fatal("timestamp ties must paginate by ID with NULL created_at")
