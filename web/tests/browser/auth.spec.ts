@@ -360,3 +360,27 @@ test('Q-10: changing accounts discards the previous viewer and SSR cache', async
   ).toBeTruthy()
   await context.close()
 })
+
+test('Q-19/Q-21: invitation return path survives signup, email confirmation and profile setup', async ({ page }) => {
+  const email = `join-signup-${Date.now()}@example.test`
+  const path = '/join/000100200300'
+  await page.goto(path)
+  await page.getByRole('link', { name: '新規登録' }).click()
+  await expect(page).toHaveURL(`/signup?returnTo=${encodeURIComponent(path)}`)
+  await page.getByLabel('メールアドレス').fill(email)
+  await page.getByLabel('パスワード').fill(password)
+  await page.getByRole('button', { name: '登録して確認メールを受け取る' }).click()
+  const link = await mailLink(email, '登録')
+  const params = new URL(link).searchParams
+  expect(params.get('returnTo')).toBe(path)
+  expect(params.has('code')).toBeFalsy()
+  await confirm(page, link)
+  await expect(page).toHaveURL(`/profile/setup?returnTo=${encodeURIComponent(path)}`)
+  await page.getByLabel('表示名').fill('招待復帰の試験')
+  await page.getByRole('button', { name: '表示名を設定して進む' }).click()
+  await expect(page).toHaveURL(path)
+  await expect(page.getByLabel('参加コード')).toBeEmpty()
+  await expect(page.getByRole('button', { name: 'このリーグに参加' })).toHaveCount(0)
+  await page.goto('/matches')
+  await expect(page.getByText('所属しているリーグがありません。')).toBeVisible()
+})

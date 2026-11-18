@@ -335,7 +335,23 @@ func TestStep1RealDBAuth(t *testing.T) {
 		testLeagueInvites(t, ctx, db, admin, verifier, a.Access, other.Access, participant, sameName["id"].(string))
 	})
 	t.Run("LeagueParticipation", func(t *testing.T) {
-		testLeagueParticipation(t, ctx, db, admin, verifier, a.Access, other.Access, participant, sameName["id"].(string))
+		thirdEmail, thirdPassword, thirdAuthID := create()
+		third := login(thirdEmail, thirdPassword)
+		verifyStatus(t, call, "GET", "/api/users/me", third.Access, 200, "")
+		apiStatus, body := call("PATCH", "/api/users/me", third.Access, `{"name":"共通招待の参加者"}`)
+		thirdParticipant, ok := body["id"].(string)
+		if apiStatus != 200 || !ok {
+			t.Fatal("third participant profile")
+		}
+		t.Cleanup(func() {
+			if _, err := admin.Exec("DELETE FROM public.users WHERE id=$1", thirdParticipant); err != nil {
+				t.Error("cleanup shared invite participant")
+			}
+			if code, _ := authCall("DELETE", "/admin/users/"+thirdAuthID, status["SERVICE_ROLE_KEY"], nil); code != 200 {
+				t.Error("cleanup shared invite Auth user")
+			}
+		})
+		testLeagueParticipation(t, ctx, db, admin, verifier, a.Access, other.Access, third.Access, participant, sameName["id"].(string), thirdParticipant)
 	})
 	t.Run("LeagueReferences", func(t *testing.T) {
 		testLeagueReferences(t, ctx, admin, call, a.Access, other.Access, participant, sameName["id"].(string))

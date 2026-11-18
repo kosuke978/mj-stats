@@ -12,6 +12,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -20,7 +21,7 @@ import (
 	"github.com/kosuke/mj-stats-api/invites"
 )
 
-func testLeagueParticipation(t *testing.T, ctx context.Context, db, admin *sql.DB, verifier *auth.Verifier, a, b, actor, other string) {
+func testLeagueParticipation(t *testing.T, ctx context.Context, db, admin *sql.DB, verifier *auth.Verifier, a, b, third, actor, other, thirdParticipant string) {
 	t.Helper()
 	newKey := func() string {
 		var raw [32]byte
@@ -41,12 +42,13 @@ func testLeagueParticipation(t *testing.T, ctx context.Context, db, admin *sql.D
 			t.Fatal("attempt limiter config")
 		}
 		handler := router(db, verifier, []string{origin}, cfg, limiter, nil)
+		var claimedIP atomic.Int32
 		return func(method, path, token string, input any, want int, code string) (map[string]any, string) {
 			t.Helper()
 			raw, _ := json.Marshal(input)
 			req := httptest.NewRequestWithContext(ctx, method, path, strings.NewReader(string(raw)))
 			req.RemoteAddr = "192.0.2.11:45678"
-			req.Header.Set("X-Forwarded-For", "203.0.113."+strconv.Itoa(len(token)%255))
+			req.Header.Set("X-Forwarded-For", "203.0.113."+strconv.Itoa(int(claimedIP.Add(1)%254+1)))
 			req.Header.Set("Content-Type", "application/json")
 			if token != "" {
 				req.Header.Set("Authorization", "Bearer "+token)
@@ -192,10 +194,13 @@ func testLeagueParticipation(t *testing.T, ctx context.Context, db, admin *sql.D
 		t.Fatal("parallel replay appended more than one event")
 	}
 	get("GET", root(f.a)+"/matches", b, nil, 200, "")
+	thirdJoin, _ := get("POST", root(f.a)+"/join", third, joinPayload(newID(), code), 200, "")
+	checkMembership(thirdJoin, thirdParticipant, "member", "active")
 	get("GET", root(f.a)+"/invites/current", b, nil, 403, "FORBIDDEN")
 	owner, _ := get("POST", root(f.a)+"/join", a, joinPayload(newID(), code), 200, "")
 	checkMembership(owner, actor, "owner", "active")
 	get("POST", root(f.b)+"/join", b, payload, 409, "IDEMPOTENCY_CONFLICT")
+	get("POST", root(f.b)+"/join", b, joinPayload(newID(), code), 404, "INVALID_INVITE")
 	get("POST", root(f.a)+"/join", b, joinPayload(joinID, "wrong"), 409, "IDEMPOTENCY_CONFLICT")
 	exec(`UPDATE public.league_members SET status='removed',ended_at=now(),version=version+1 WHERE league_id=$1 AND user_id=$2`, f.a, other)
 	replay, _ := get("POST", root(f.a)+"/join", b, payload, 200, "")
@@ -204,6 +209,7 @@ func testLeagueParticipation(t *testing.T, ctx context.Context, db, admin *sql.D
 	rejoined, _ := get("POST", root(f.a)+"/join", b, joinPayload(newID(), code), 200, "")
 	checkMembership(rejoined, other, "member", "active")
 
+	exec(`UPDATE public.league_members SET role='admin' WHERE league_id=$1 AND user_id=$2`, f.left, actor)
 	leftCode := issue(f.left, b)["code"].(string)
 	left, _ := get("POST", root(f.left)+"/join", a, joinPayload(newID(), leftCode), 200, "")
 	checkMembership(left, actor, "member", "active")
@@ -256,5 +262,19 @@ func testLeagueParticipation(t *testing.T, ctx context.Context, db, admin *sql.D
 	if (race["http_status"] != 200 || storedStatus != "active") && (race["http_status"] != 404 || storedStatus != "removed") {
 		t.Fatal("reissue and join did not serialize")
 	}
+	exec(`UPDATE public.league_members SET status='removed',ended_at=now(),version=version+1 WHERE league_id=$1 AND user_id=$2`, f.removed, actor)
+	revokedInvite := issue(f.removed, b)
+	newJoin := joinPayload(newID(), revokedInvite["code"].(string))
+	revoke := map[string]string{"client_request_id": newID(), "version": "1"}
+	wg.Go(func() { race, _ = get("POST", root(f.removed)+"/join", a, newJoin, 0, "") })
+	wg.Go(func() {
+		get("POST", root(f.removed)+"/invites/"+revokedInvite["id"].(string)+"/revoke", b, revoke, 200, "")
+	})
+	wg.Wait()
+	query(&storedStatus, `SELECT status FROM public.league_members WHERE league_id=$1 AND user_id=$2`, f.removed, actor)
+	if (race["http_status"] != 200 || storedStatus != "active") && (race["http_status"] != 404 || storedStatus != "removed") {
+		t.Fatal("revoke and join did not serialize")
+	}
+	get("POST", root(f.removed)+"/join", a, joinPayload(newID(), revokedInvite["code"].(string)), 404, "INVALID_INVITE")
 	t.Log("Q-14/Q-26 PASS: listed search/normalized cursor, hidden number/preview without membership, shared invitations, join/rejoin, active roles, replay/rotation/expiry/competition, shared limit and Retry-After")
 }
