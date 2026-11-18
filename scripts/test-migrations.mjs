@@ -3,6 +3,7 @@ import { execFileSync } from 'node:child_process'
 import { createHash } from 'node:crypto'
 import { readFileSync, readdirSync } from 'node:fs'
 import { testLeagueFoundation, testLeagueMigration } from './test-league-foundation.mjs'
+import { fixtureID, leagueA, normalLeagues, ownerA, testRuleSeasonFoundation } from './test-rule-season-foundation.mjs'
 const container = 'supabase_db_mj-stats-step1'
 const info = JSON.parse(execFileSync('docker', ['inspect', container], { encoding: 'utf8' }))[0]
 if (info.Config.Labels['com.supabase.cli.project'] !== 'mj-stats-step1' || !info.NetworkSettings.Ports['5432/tcp'].some(p => p.HostPort === '55422')) throw new Error('Refusing unknown environment')
@@ -35,6 +36,8 @@ function projectionQuery(columns) {
   }).join(',')});`
 }
 const files = readdirSync('supabase/migrations').filter(f => f.endsWith('.sql')).sort()
+const leagueFoundation = '20261118000000_league_membership_foundation.sql'
+const step22Files = files.slice(files.indexOf(leagueFoundation) + 1)
 const migration = file => readFileSync(`supabase/migrations/${file}`, 'utf8')
 // Isolated acceptance ledger using the Supabase history shape. Exact SQL and
 // version/order are checked here; this is not a production migration runner.
@@ -109,7 +112,36 @@ try {
   const step1Query = projectionQuery(JSON.parse(sql(queries.columns)))
   const step1Before = sql(step1Query)
   testLeagueMigration(sql, migration('20261118000000_league_membership_foundation.sql'))
-  for (const file of files.filter(f => !f.startsWith('20261117'))) apply(file, applied)
+  apply(leagueFoundation, applied)
+  stage = '2-1 populated database upgrade'
+  const step21Query = projectionQuery(JSON.parse(sql(queries.columns)))
+  const beforeStep22 = sql(step21Query)
+  // Add normal 2-1 membership alongside the copy and older NULL/odd values.
+  // Retain them across all 2-2 DDL in the transaction, then discard the fixture.
+  sql(`BEGIN; ${normalLeagues}
+    SET CONSTRAINTS ALL IMMEDIATE;
+    INSERT INTO public.rules(id,league_id,name,default_points,return_points,uma_1,uma_2,uma_3,uma_4)
+      VALUES ('${fixtureID(21)}','${leagueA}','unverified',NULL,100,3,6,-7,0);
+    INSERT INTO public.seasons(id,league_id,name,start_date,end_date) VALUES
+      ('${fixtureID(31)}','${leagueA}','open dates',NULL,NULL),
+      ('${fixtureID(32)}','${leagueA}','inverted old dates','2026-12-01','2026-11-30');
+    INSERT INTO public.matches(id,rule_id,season_id,recorded_by,created_at)
+      VALUES ('${fixtureID(41)}','${fixtureID(21)}','${fixtureID(31)}','${ownerA}',NULL);
+    INSERT INTO public.match_results(match_id,user_id,raw_score,final_point,rank)
+      VALUES ('${fixtureID(41)}','${ownerA}',-100,-16.7,4);
+    CREATE TEMP TABLE before_step22 AS ${step21Query}
+    ${step22Files.map(file => migration(file).replace('BEGIN;', '').replace(/COMMIT;\s*$/, '')).join('\n')}
+    DO $$ BEGIN
+      IF (${step21Query.slice(0,-1)}) IS DISTINCT FROM (SELECT jsonb_build_object FROM before_step22)
+        THEN RAISE EXCEPTION '2-1 rows or references changed'; END IF;
+      IF NOT EXISTS (SELECT FROM public.rules WHERE id='${fixtureID(21)}'
+        AND calculation_version='legacy_unverified' AND NOT available AND version=1)
+        THEN RAISE EXCEPTION 'Legacy rule incorrectly classified'; END IF;
+    END $$;
+    ROLLBACK;`)
+  for (const file of step22Files) apply(file, applied)
+  if (beforeStep22 !== sql(step21Query)) throw new Error('2-1 values changed')
+  console.log('PASS 2-1 upgrade: normal and legacy rows unchanged; older NULL/inverted dates and numeric values preserved')
   if (step1Before !== sql(step1Query)) throw new Error('Step 1 values changed')
   for (const [name,q] of Object.entries(queries)) if (!sameJSON(emptyShape[name],JSON.parse(sql(q)))) throw new Error(`Empty/incremental ${name} differ`)
   console.log('PASS empty/incremental schema equality; all Step 1 columns preserved')
@@ -125,9 +157,10 @@ try {
     try { sql(migration(file)) } catch { rejected = true }
     if (!rejected || after !== sql(afterQuery)) throw new Error('Replay changed rows')
   }
+  const latestVersion = files.at(-1).split('_')[0]
   for (const damage of [
-    `DELETE FROM supabase_migrations.schema_migrations WHERE version='20261118000000'`,
-    `UPDATE supabase_migrations.schema_migrations SET statements=ARRAY['changed'] WHERE version='20261118000000'`,
+    `DELETE FROM supabase_migrations.schema_migrations WHERE version='${latestVersion}'`,
+    `UPDATE supabase_migrations.schema_migrations SET statements=ARRAY['changed'] WHERE version='${latestVersion}'`,
     `INSERT INTO supabase_migrations.schema_migrations VALUES ('99999999999999',ARRAY['unknown'],'unknown')`,
   ]) {
     const history = sql(`SELECT json_agg(h) FROM supabase_migrations.schema_migrations h`)
@@ -143,6 +176,9 @@ try {
   console.log('PASS normal postgres migrations; validator has no direct Auth access; repeated raw migration rejected without data change')
   stage = 'league foundation constraints and permissions'
   await testLeagueFoundation(sql, { container, database })
+  stage = 'rule/season constraints and permissions'
+  const fullRowQuery = projectionQuery(JSON.parse(sql(queries.columns)))
+  testRuleSeasonFoundation(sql, fullRowQuery)
   if (!snapshot) console.log('Actual-copy acceptance is separate: rerun with --snapshot <read-only-export.json>.')
 } catch (error) {
   // SQLSTATE only: never emit row values, query text or connection details.
