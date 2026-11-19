@@ -15,7 +15,7 @@ function localSQL(input: string) {
   }).trim()
 }
 
-test("Q-09/Q-10/Q-19/Q-26: home, guest entry, exact history and safe draft recovery", async ({ page, request, browser }, testInfo) => {
+test("Q-09/Q-10/Q-19/Q-26: home, guest entry, exact history and safe draft recovery", async ({ page, request, browser, browserName }, testInfo) => {
   test.setTimeout(180_000)
   const cfg = JSON.parse(readFileSync("../.local/acceptance.json", "utf8"))
   expect(cfg.API_URL).toBe("http://127.0.0.1:55421")
@@ -101,7 +101,8 @@ test("Q-09/Q-10/Q-19/Q-26: home, guest entry, exact history and safe draft recov
       await page.getByRole("combobox", { name: `参加者 ${i + 1}`, exact: true }).selectOption(guests[i])
       await page.getByLabel(`素点 ${i + 1}`, { exact: true }).fill(i === 3 ? "101" : scores[i])
     }
-    await page.getByLabel("対局日時（日本時間）").fill("2024-11-01T00:00")
+    await page.getByLabel("対局日（日本時間）").fill("2024-11-01")
+    await page.getByLabel("開始時刻（日本時間）").fill("00:00")
     await expect(page.getByLabel("シーズン")).toHaveValue("")
     await page.getByRole("button", { name: "計算する" }).click()
     await expect(page.getByRole("main").getByRole("alert")).toContainText("100点単位")
@@ -196,7 +197,8 @@ test("Q-09/Q-10/Q-19/Q-26: home, guest entry, exact history and safe draft recov
       await page.getByRole("combobox", { name: `参加者 ${i + 1}`, exact: true }).selectOption(nextPlayers[i])
       await page.getByLabel(`素点 ${i + 1}`, { exact: true }).fill(nextScores[i])
     }
-    await page.getByLabel("対局日時（日本時間）").fill("2024-11-02T00:00")
+    await page.getByLabel("対局日（日本時間）").fill("2024-11-02")
+    await page.getByLabel("開始時刻（日本時間）").fill("00:00")
     await page.getByRole("button", { name: "計算する" }).click()
     await expect(page.getByText("−55 pt", { exact: false })).toBeVisible()
     await page.getByRole("button", { name: "保存する" }).click()
@@ -224,6 +226,8 @@ test("Q-09/Q-10/Q-19/Q-26: home, guest entry, exact history and safe draft recov
         await touchPage.getByRole("link", { name: "対局を入力" }).tap()
         await expect(touchPage.getByLabel("素点 1", { exact: true })).toBeEditable()
         await checkLayout(touchPage)
+        await expect(touchPage.getByLabel("対局日（日本時間）")).toBeVisible()
+        await expect(touchPage.getByLabel("開始時刻（日本時間）")).toBeVisible()
         await touchPage.getByLabel("素点 1", { exact: true }).tap()
         await expect(touchPage.getByLabel("素点 1", { exact: true })).toBeFocused()
         await touchPage.screenshot({ path: testInfo.outputPath("entry-360-text200.png"), fullPage: true })
@@ -238,7 +242,7 @@ test("Q-09/Q-10/Q-19/Q-26: home, guest entry, exact history and safe draft recov
         await page.goto(history)
         await expect(page.getByRole("link", { name: "対局詳細" }).first()).toBeVisible()
         await checkLayout(page)
-        await page.keyboard.press("Tab")
+        await page.keyboard.press(browserName === "webkit" ? "Alt+Tab" : "Tab")
         const home = page.getByRole("link", { name: "ホーム", exact: true })
         await expect(home).toBeFocused()
         expect(await home.evaluate((el) => el.matches(":focus-visible") && getComputedStyle(el).outlineStyle !== "none")).toBe(true)

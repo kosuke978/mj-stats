@@ -73,7 +73,7 @@ export async function POST(request: NextRequest) {
         : 400,
       '更新できませんでした。時間をおいて再試行してください。',
     )
-  store.set(recoveryCookie, '', { ...recoveryOptions, maxAge: 0 })
+  store.set(recoveryCookie, '', { ...recoveryOptions(), maxAge: 0 })
   return NextResponse.json(
     { message: 'パスワードを更新しました。' },
     { headers: { 'Cache-Control': 'private, no-store' } },

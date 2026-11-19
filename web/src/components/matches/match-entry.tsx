@@ -66,6 +66,7 @@ function EntryForm({ leagueID, participants: initial, rules, seasons, storageKey
   const base = `/api/leagues/${leagueID}`
   const history = `/matches/league/${leagueID}`
   const rule = rules.find((r) => r.id === draft.rule)
+  const [matchDay, matchTime] = draft.date.split("T")
   const expectedTotal = rule ? rule.default_points * 4 : null
   const total = draft.players.reduce((sum, p) => sum + (Number(p.score) || 0), 0)
   const locked = busy || draft.pending !== null
@@ -153,7 +154,7 @@ function EntryForm({ leagueID, participants: initial, rules, seasons, storageKey
     let input = draft.pending
     if (!input) {
       if (!preview) return
-      if (!draft.date) {
+      if (!matchDay || !matchTime) {
         setMessage("日本時間で対局日時を入力してください。")
         return
       }
@@ -211,7 +212,11 @@ function EntryForm({ leagueID, participants: initial, rules, seasons, storageKey
           <select className={selectStyle} value={draft.rule} onChange={(e) => edit({ rule: e.target.value })}>
             <option value="">ルールを選択</option>
             {draft.rule && !rule && <option value={draft.rule}>利用できないルール</option>}
-            {rules.map((r) => <option key={r.id} value={r.id}>{r.name} · {r.default_points.toLocaleString("ja-JP")}点持ち · {r.id.slice(0, 8)}</option>)}
+            {rules.map((r) => (
+              <option key={r.id} value={r.id}>
+                {r.name}{rules.some((other) => other.id !== r.id && other.name === r.name) && ` (${r.id.slice(0, 8)})`}
+              </option>
+            ))}
           </select>
         </label>
         <label className="grid min-w-0 gap-1 text-sm">
@@ -222,9 +227,13 @@ function EntryForm({ leagueID, participants: initial, rules, seasons, storageKey
             {seasons.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
           </select>
         </label>
-        <label className="grid min-w-0 gap-1 text-sm sm:col-span-2">
-          対局日時（日本時間）
-          <Input type="datetime-local" className="min-w-0 px-2" value={draft.date} onChange={(e) => edit({ date: e.target.value })} />
+        <label className="grid min-w-0 gap-1 text-sm">
+          対局日（日本時間）
+          <Input type="date" className="min-w-0 px-2" value={matchDay} onChange={(e) => edit({ date: `${e.target.value}T${matchTime}` })} />
+        </label>
+        <label className="grid min-w-0 gap-1 text-sm">
+          開始時刻（日本時間）
+          <Input type="time" className="min-w-0 px-2" value={matchTime} onChange={(e) => edit({ date: `${matchDay}T${e.target.value}` })} />
         </label>
       </fieldset>
       <fieldset disabled={locked} className="@container min-w-0 space-y-3 rounded-lg border px-[min(1rem,4vw)] py-4">

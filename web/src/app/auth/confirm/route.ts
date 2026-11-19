@@ -37,7 +37,7 @@ export async function GET(request: NextRequest) {
       res.cookies.set(
         recoveryCookie,
         recoveryProof(data.user.id, data.session.access_token),
-        recoveryOptions,
+        recoveryOptions(),
       )
       return res
     }

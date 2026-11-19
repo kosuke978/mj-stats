@@ -1,5 +1,6 @@
 import 'server-only'
 import { createHmac, timingSafeEqual } from 'node:crypto'
+import { appOrigin } from './origin'
 
 export const recoveryCookie = 'mjstats-recovery'
 function secret() {
@@ -50,10 +51,13 @@ export function validRecovery(
     return false
   }
 }
-export const recoveryOptions = {
-  httpOnly: true,
-  secure: process.env.NODE_ENV === 'production',
-  sameSite: 'lax' as const,
-  path: '/',
-  maxAge: 600,
+export function recoveryOptions() {
+  return {
+    httpOnly: true,
+    // Safari requires HTTPS for Secure cookies, including on localhost.
+    secure: new URL(appOrigin()).protocol === 'https:',
+    sameSite: 'lax' as const,
+    path: '/',
+    maxAge: 600,
+  }
 }
