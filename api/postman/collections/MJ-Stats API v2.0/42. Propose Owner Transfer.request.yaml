@@ -1,0 +1,15 @@
+$kind: http-request
+description: "ownerのみ。指名は7日有効。"
+url: "{{base_url}}/api/leagues/{{league_id}}/owner-transfers"
+method: POST
+headers:
+  Authorization: "Bearer {{access_token}}"
+  Content-Type: application/json
+body:
+  type: json
+  content: |
+    {
+      "client_request_id": "{{client_request_id}}",
+      "to_user_id": "{{target_user_id}}"
+    }
+order: 43000

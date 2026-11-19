@@ -1,6 +1,6 @@
 # MJ-Stats Postman
 
-ローカルのStep 3対応Goとmigrationを使用します。インポート対象は `export/MJ-Stats API v2.0.postman_collection.json` と `export/MJ-Stats.local.postman_environment.json` です。
+ローカルのStep 5対応Goとmigrationを使用します。インポート対象は `export/MJ-Stats API v2.0.postman_collection.json` と `export/MJ-Stats.local.postman_environment.json` です。
 
 1. `base_url` を専用ローカルGoに合わせ、同じローカルAuthの本人access tokenを `access_token` のローカル値へ設定します。
 2. Health → Get Me → 必要なら Set My Display Name → My Leagues の順で確認します。My Leaguesで返った有効所属のIDを `league_id` に指定します。
@@ -29,5 +29,12 @@ Search Leaguesは掲載名だけを検索し、Resolve League Numberは非掲載
 2. Rulesの利用可能な `rule_id` と、Participantsから異なる4人の `player_1_id`〜`player_4_id` を設定し、Calculate League Matchを実行します。33,300 / 33,300 / 33,300 / 100点の例では、標準ルールで1位3人が各499/30ptです。
 3. Save League Matchの操作IDを新しくし、対局日時（オフセット付き）、必要なら同じリーグのシーズンUUIDを設定します。例の `null` は未指定です。応答の `id` を `match_id` に設定し、League Match DetailとGet Matchesを確認します。再送は同じ操作ID・同じ内容を送ります。
 4. 紐付けを申請する本人のBearerと `guest_user_id` でRequest Participant Linkを実行します。List Participant Linksで申請IDと版を取得します。運営者のBearerで `link_id`、`link_version`、新しい操作ID、確認内容を指定し、ApproveまたはReject Participant Linkを実行します。
+
+## 順位表と管理
+
+1. Rankingで通算とシーズンを確認します。訂正・取消ではMatch Detailの `version` を `object_version` に設定し、運営のBearerで実行します。200の `applied_version`、Match Revisions、通常履歴と順位表を照合します。
+2. League Settings、Members、Rules、Seasonsで現在の版を取得してから管理操作を送ります。メンバー操作では `target_user_id`、引継ぎでは提案後の `transfer_id`、シーズン変更では `season_id` を指定します。指名と同意は別の本人のBearerで実行します。
+3. 本人対応を解除するときはList Participant Linksの `link_id` と `link_version` を指定し、ownerのBearerでRevoke Participant Linkを実行します。League Eventsと順位表で変更を確認します。
+4. 新しい操作は新しいUUIDを使い、再送は同じ操作ID・同じ本文で送ります。操作ID再利用や版競合は409。運営権限があるリーグとmemberのリーグを切り替えて403を照合します。
 
 v1のコレクションは当時の契約の記録です。

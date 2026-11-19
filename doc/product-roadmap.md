@@ -25,7 +25,7 @@ SVG生成と、X・LINEへの投稿・プレビューで使用する出力形式
 
 ## 現在の位置
 
-**Phase 2.5 / Step 4「ホーム・導線」の実装・受入。** Step 2の [PR #10](https://github.com/kosuke978/mj-stats/pull/10) は `6a4e307`、Step 3の [PR #11](https://github.com/kosuke978/mj-stats/pull/11) は `cb3b8e1` でマージ済み。Step 4の結果は [Step 4受入](quality-and-acceptance.md#step-4の受入) に記録する。Step 4のマージ・完了とStep 5着手は開発者が判断する。
+**Phase 2.5 / Step 5「順位表・管理」。** Step 1〜4はマージ済み。Step 4の [PR #12](https://github.com/kosuke978/mj-stats/pull/12) は `7072072` でmainにマージされた。開発者の指示によりStep 5へ着手した。専用ローカルの結果は [Step 5の受入](quality-and-acceptance.md#step-5の受入) に記録する。Step 5のマージ、工程完了、公開判断は開発者が行う。
 
 | Step | 状態 | 対象 | 完了を判断する観点 |
 | --- | --- | --- | --- |

@@ -1,0 +1,14 @@
+$kind: http-request
+description: "本人が脱退。ownerは同意による引継ぎが先。"
+url: "{{base_url}}/api/leagues/{{league_id}}/leave"
+method: POST
+headers:
+  Authorization: "Bearer {{access_token}}"
+  Content-Type: application/json
+body:
+  type: json
+  content: |
+    {
+      "client_request_id": "{{client_request_id}}"
+    }
+order: 41000

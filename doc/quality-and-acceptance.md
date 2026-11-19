@@ -587,3 +587,29 @@ Step 3では、対象リーグ所属のGo認可と共通ロックに、ゲスト
 Chromiumは12件PASS・1件SKIP、WebKitは対象11件PASS。結果は `.local/step4-browser-final.{log,json}` と `.local/step4-webkit-final.{log,json}` に保存した。通常スイートの短期限メール専用ケース、Postman UI、管理QA・元共有DB・本番への適用と環境別の総合受入は未実施。
 
 旧対局画面との互換のため履歴・入力・詳細の既存URLを維持した。下書きの24時間は通常編集または初回送信を起点とし、再送で延長しない。期限が記録されていない旧形式の下書きは破棄する。Step 4によるGo API・DBスキーマの変更はない。次Stepの順位表・設定・訂正/取消・本人紐付け解除は、リーグホームに接続し、Goで所属と役割を判定する。保存済み対局の分数・原参加者IDを保持する。
+
+## Step 5の受入
+
+2026-11-19（JST）。専用ローカル `mj-stats-step1` の実Go、PostgreSQL 17、Supabase Authを使用。Goの受入は `MJSTATS_INTEGRATION=1 GIN_MODE=release go -C api test -count=1 -v -run '^TestStep1RealDBAuth$' .`。Webは専用設定の本番ビルドを使用。証跡はGit管理外の `.local/step5/` に保存した。
+
+| ケース | 実行結果 | 証跡 |
+| --- | --- | --- |
+| Q-15 本人対応 | PASS。adminの解除を403、ownerの解除と再送を200で確認。ゲスト199/30pt・3対局と本人50pt・1対局は承認後に1699/30pt・4対局となり、解除後は元の2行に復帰。前後で原ID・結果行が一致。紐付け済みゲストの名前変更も拒否 | `go-integration.log` の /Step5、`league_step5_integration_test.go` |
+| Q-18 所属・管理 | PASS。同じ本人がAではadmin、Bではmember。Aの設定・ルール新版/利用可否・シーズン・未紐付けゲスト名を更新し、Bの設定・訂正を403。adminのrole変更・admin除名・引継ぎ指名を拒否。member除名、成績保全、同じIDでmember再参加、ownerから引継いだ旧ownerの脱退と再送を確認。指名だけではowner不変。指名本人以外、所属版変更、期限切れを拒否。並行同意は200/409で、owner参照と2人のroleが一致 | 同上 |
+| Q-20 基本順位表 | PASS。通算799/30・199/30・199/30・−399/10pt（各3対局）、S1・S2・未指定・空期間を実行。取消を除外し、訂正後は同点1・1・3位、対局数1のまま。他リーグ・非所属・他リーグのシーズンを分離。成績のあるゲスト・除名者・脱退者を掲載し、未対局者は対象外 | 同上 |
+| Q-24 対局変更 | PASS。記録者本人のmemberを拒否、別リーグ対象は404。版競合は200/409で1版だけ適用、同じ操作は元の適用版、異なる内容での操作ID再利用は409。監査INSERTの故障で4結果・親対局・監査がロールバック。作成時刻・記録者・元対局IDを保持し、取消で4結果が残る。運営の変更前後・操作者・理由とページング、memberの監査拒否を確認 | 同上 |
+| Q-25 移行・復旧 | PASS。空DBで全16 migrationを照合。合成データと保存済み実コピーの旧5参加者・19対局・76結果、Step 3の作成記録・正確値、既存のID/値/参照を保全。順序・履歴・公開ロールの拒否、専用CLIの再適用0件を確認。隔離先へ `pg_dump`/`pg_restore` し、旧値・履歴・スキーマを照合。PostgreSQLが同じvarchar配列キャストを要素単位で出力する表記差を吸収した | `migration-{actual,synthetic,repeat}.log` |
+| Q-26 API・Web | PASS（Go・Chromiumの実施範囲）。認証と対象リーグごとの403/404、厳密な入力、ページング、競合・障害と再送を確認。Webは未ログインの直URLから元画面へ復帰し、memberの訂正・設定直URLを拒否。ホーム→順位表・設定、詳細→訂正/取消と監査、本人紐付けの承認/解除、引継ぎの同意と脱退を操作。訂正の確定後に応答を切断し、同じ本文・操作IDで再送した | `go-integration.log`、`step5-chromium-final.{log,json}`、`step5.spec.ts` |
+| Step 1〜4回帰 | 実Go/AuthでJWT、セッション競合、名前、所属、招待と参加、試行制限、再送、正確な記録、履歴・ゲストと本人対応を再実行しPASS。Chromiumの一括実行でタイムアウトした履歴テストは単独再実行でPASS。既存の短期限メール専用ケースは通常スイートでSKIP | `go-integration.log`、`chromium-final.log`、`chromium-history-retry.log` |
+
+Goの単体試験・vet、Webのlint・型検査・本番ビルド・単体5件、Postman YAML/JSONの新規20ルート・例・空の秘密変数を照合した。証跡は `go-test.log`、`go-vet.log`、`web-{lint,types,build,unit}.log`、`postman.log`。
+
+### D-39の端末・操作確認
+
+| 環境 | 実施内容・結果 |
+| --- | --- |
+| macOS 26.5（25F71）・Playwright 1.65.1 Chromium 159.0.8154.6 | PASS。デスクトップとタッチ端末エミュレーション。順位表・設定の360/390/768/1280 CSS px、844×390の横向きと文字200%。訂正画面の360px・200%で日時の各欄を確認。タッチで順位表に移動し、キーボードでフィルターへフォーカスを移した。読み込み中の横幅と開始時刻の文字切れを修正。証跡は `step5-chromium-final/` |
+| iPhone 17 Proシミュレーター・iOS 26.5付属Safari | 縦向き表示を確認。未ログインの訂正URL、リーグホーム、同順位と対局数、設定、訂正、変更履歴、取消済み対局の画面を撮影した。書込み操作はGoでfixtureを用意。証跡は `ios-safari.log` と `ios-evidence/` |
+| Playwright WebKit 27.2 | ヘッドレスで順位表、表示ありで対局履歴まで確認。Playwrightでリンクへのポインター操作が遮られ、通し試験はタイムアウト。実Safariシミュレーターでは直URLで詳細と変更履歴を表示した。証跡は `step5-webkit-{final,headed}.log` |
+
+物理端末のiOS Safari・Android Chrome、対象ブラウザの前メジャー版、デスクトップでの製品版Chrome・SafariとPostman UIは未実施。公開前に対象端末の操作確認に加え、対象環境の承認・Auth/SMTP実配送・URL/ホスティング・監視/SLO・バックアップと復旧担当を確認する。元共有DB・管理QA・本番は未適用。

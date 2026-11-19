@@ -1,0 +1,7 @@
+$kind: http-request
+description: "運営と指名本人だけに現在の指名を返す。"
+url: "{{base_url}}/api/leagues/{{league_id}}/owner-transfers/current"
+method: GET
+headers:
+  Authorization: "Bearer {{access_token}}"
+order: 42000

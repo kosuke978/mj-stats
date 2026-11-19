@@ -1,0 +1,7 @@
+$kind: http-request
+description: "所属者限定。all、unassigned、シーズンUUID。保存済み分数と対局数を返す。"
+url: "{{base_url}}/api/leagues/{{league_id}}/ranking?season=all"
+method: GET
+headers:
+  Authorization: "Bearer {{access_token}}"
+order: 33000
