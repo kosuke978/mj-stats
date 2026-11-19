@@ -6,6 +6,8 @@ import { randomUUID } from "node:crypto"
 const container = "supabase_db_mj-stats-step1"
 const api = "http://localhost:8080"
 
+test.use({ launchOptions: { ignoreDefaultArgs: ["--disable-back-forward-cache"] } })
+
 function localSQL(input: string) {
   return execFileSync("docker", ["exec", "-i", container, "psql", "-X", "-qAt", "-U", "postgres",
     "-d", "postgres", "-v", "ON_ERROR_STOP=1"], {
@@ -13,7 +15,8 @@ function localSQL(input: string) {
   }).trim()
 }
 
-test("Step 3: real guest entry, exact history and recovery after a lost save response", async ({ page, request }) => {
+test("Q-09/Q-10/Q-19/Q-26: home, guest entry, exact history and safe draft recovery", async ({ page, request, browser }, testInfo) => {
+  test.setTimeout(180_000)
   const cfg = JSON.parse(readFileSync("../.local/acceptance.json", "utf8"))
   expect(cfg.API_URL).toBe("http://127.0.0.1:55421")
   const info = JSON.parse(execFileSync("docker", ["inspect", container], { encoding: "utf8" }))[0]
@@ -75,9 +78,11 @@ test("Step 3: real guest entry, exact history and recovery after a lost save res
     const entry = `${history}/new`
     const saveURL = `${api}/api/leagues/${a}/matches`
     await page.setViewportSize({ width: 390, height: 844 })
-    await page.goto(history)
+    await page.goto("/login?returnTo=https%3A%2F%2Fevil.invalid")
     await signIn(page, owner)
-    await expect(page).toHaveURL(history)
+    await expect(page).toHaveURL("/")
+    await page.getByRole("link", { name: "ゲスト記録リーグ オーナー" }).click()
+    await expect(page).toHaveURL(`/leagues/${a}`)
     await page.getByRole("link", { name: "対局を入力" }).click()
     await expect(page).toHaveURL(entry)
     await page.getByText("ゲストを追加", { exact: true }).click()
@@ -103,9 +108,13 @@ test("Step 3: real guest entry, exact history and recovery after a lost save res
     await expect(page.getByLabel("素点 4", { exact: true })).toHaveValue("101")
     await page.getByLabel("素点 4", { exact: true }).fill(scores[3])
 
-    await page.goto(`/matches/league/${b}/new`)
+    await page.getByRole("link", { name: "ホーム", exact: true }).click()
+    await page.getByRole("link", { name: "別の記録リーグ オーナー" }).click()
+    await page.getByRole("link", { name: "対局を入力" }).click()
     await expect(page.getByLabel("素点 1", { exact: true })).toHaveValue("")
     await expect(page.getByRole("option", { name: /同名ゲスト/ })).toHaveCount(0)
+    await page.goBack()
+    await expect(page.getByRole("heading", { name: "別の記録リーグ", exact: true })).toBeVisible()
     await page.goto(entry)
     await expect(page.getByRole("combobox", { name: "参加者 1", exact: true })).toHaveValue(guests[0])
     await expect(page.getByLabel("素点 1", { exact: true })).toHaveValue("33300")
@@ -113,11 +122,11 @@ test("Step 3: real guest entry, exact history and recovery after a lost save res
     await expect(page.getByText("+16.6333… pt", { exact: false })).toHaveCount(3)
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true)
 
-    let originalBody: unknown
+    let originalBody: string | null = null
     let matchID = ""
     await page.route(saveURL, async (route) => {
       if (route.request().method() !== "POST") return route.continue()
-      originalBody = route.request().postDataJSON()
+      originalBody = route.request().postData()
       const result = await route.fetch()
       expect(result.status()).toBe(201)
       matchID = uuid((await result.json()).id)
@@ -130,24 +139,20 @@ test("Step 3: real guest entry, exact history and recovery after a lost save res
     await expect(page.getByLabel("素点 1", { exact: true })).toHaveValue("33300")
     await expect(page.getByLabel("素点 1", { exact: true })).toBeDisabled()
 
-    await page.getByRole("link", { name: "アカウント" }).click()
-    await page.getByRole("button", { name: "このブラウザからログアウト" }).click()
-    await expect(page).toHaveURL(/\/login/)
-    await page.goto(entry)
-    await signIn(page, member)
-    await expect(page).toHaveURL(entry)
-    await expect(page.getByLabel("素点 1", { exact: true })).toHaveValue("")
-    await expect(page.getByRole("button", { name: "同じ内容で再送" })).toHaveCount(0)
-    await page.getByRole("link", { name: "アカウント" }).click()
-    await page.getByRole("button", { name: "このブラウザからログアウト" }).click()
-    await expect(page).toHaveURL(/\/login/)
-    await page.goto(entry)
+    // Revoke in Auth without an in-app logout. Go must return a real 401, while
+    // the browser retains the exact bytes from the previously committed write.
+    localSQL(`DELETE FROM auth.sessions WHERE user_id='${authIDs[0]}';`)
+    const unauthorized = page.waitForResponse((res) => res.url() === saveURL &&
+      res.request().method() === "POST" && res.status() === 401)
+    await page.getByRole("button", { name: "同じ内容で再送" }).click()
+    expect((await unauthorized).request().postData()).toBe(originalBody)
+    await expect(page).toHaveURL(`/login?returnTo=${encodeURIComponent(entry)}`)
     await signIn(page, owner)
     await expect(page).toHaveURL(entry)
     await expect(page.getByRole("button", { name: "同じ内容で再送" })).toBeVisible()
     await page.route(saveURL, async (route) => {
       if (route.request().method() !== "POST") return route.continue()
-      expect(route.request().postDataJSON()).toEqual(originalBody)
+      expect(route.request().postData()).toBe(originalBody)
       const result = await route.fetch()
       expect(result.status()).toBe(200)
       expect((await result.json()).id).toBe(matchID)
@@ -159,6 +164,7 @@ test("Step 3: real guest entry, exact history and recovery after a lost save res
     expect(localSQL(`SELECT (SELECT count(*) FROM public.matches WHERE league_id='${a}'),
       (SELECT count(*) FROM public.match_results WHERE match_id='${matchID}'),
       (SELECT count(*) FROM public.match_revisions WHERE match_id='${matchID}');`)).toBe("1|4|1")
+    expect(await page.evaluate(() => Object.keys(sessionStorage).filter((key) => key.startsWith("mjstats.match-entry.v2:")))).toEqual([])
     await page.getByRole("link", { name: "保存した対局を見る" }).click()
     await expect(page).toHaveURL(`${history}/${matchID}`)
     await expect(page.getByText("+16.6333… pt", { exact: false })).toHaveCount(3)
@@ -197,6 +203,100 @@ test("Step 3: real guest entry, exact history and recovery after a lost save res
     await page.getByRole("link", { name: "保存した対局を見る" }).click()
     await expect(page.getByText("−55 pt", { exact: false })).toBeVisible()
     expect(localSQL(`SELECT count(DISTINCT match_id) FROM public.match_results WHERE league_id='${a}' AND user_id='${guests[0]}'`)).toBe("2")
+
+    await test.step("360/390/768/1280 CSS px, 200% text, touch, landscape and visible keyboard focus", async () => {
+      const state = await page.context().storageState()
+      const touch = await browser.newContext({ storageState: state, viewport: { width: 360, height: 800 }, isMobile: true, hasTouch: true })
+      const touchPage = await touch.newPage()
+      const checkLayout = async (target: Page) => {
+        await target.locator("html").evaluate((html) => html.style.fontSize = "200%")
+        expect(await target.evaluate(() => ({
+          width: document.documentElement.clientWidth, scroll: document.documentElement.scrollWidth,
+          rem: getComputedStyle(document.documentElement).fontSize,
+        }))).toEqual({ width: target.viewportSize()!.width, scroll: target.viewportSize()!.width, rem: "32px" })
+      }
+      try {
+        await touchPage.goto("/")
+        await expect(touchPage.getByRole("link", { name: "ゲスト記録リーグ オーナー" })).toBeVisible()
+        await checkLayout(touchPage)
+        await touchPage.screenshot({ path: testInfo.outputPath("home-360-text200.png"), fullPage: true })
+        await touchPage.getByRole("link", { name: "ゲスト記録リーグ オーナー" }).tap()
+        await touchPage.getByRole("link", { name: "対局を入力" }).tap()
+        await expect(touchPage.getByLabel("素点 1", { exact: true })).toBeEditable()
+        await checkLayout(touchPage)
+        await touchPage.getByLabel("素点 1", { exact: true }).tap()
+        await expect(touchPage.getByLabel("素点 1", { exact: true })).toBeFocused()
+        await touchPage.screenshot({ path: testInfo.outputPath("entry-360-text200.png"), fullPage: true })
+        await touchPage.setViewportSize({ width: 844, height: 390 })
+        await checkLayout(touchPage)
+        await touchPage.screenshot({ path: testInfo.outputPath("entry-landscape-text200.png"), fullPage: true })
+      } finally {
+        await touch.close()
+      }
+      for (const width of [390, 768, 1280]) {
+        await page.setViewportSize({ width, height: 900 })
+        await page.goto(history)
+        await expect(page.getByRole("link", { name: "対局詳細" }).first()).toBeVisible()
+        await checkLayout(page)
+        await page.keyboard.press("Tab")
+        const home = page.getByRole("link", { name: "ホーム", exact: true })
+        await expect(home).toBeFocused()
+        expect(await home.evaluate((el) => el.matches(":focus-visible") && getComputedStyle(el).outlineStyle !== "none")).toBe(true)
+        await page.screenshot({ path: testInfo.outputPath(`history-${width}-text200.png`), fullPage: true })
+        await page.keyboard.press("Enter")
+        await expect(page).toHaveURL("/")
+      }
+    })
+
+    await test.step("discard drafts on 24h expiry, explicit logout across tabs and account changes", async () => {
+      const score = () => page.getByLabel("素点 1", { exact: true })
+      const logout = () => page.getByRole("button", { name: "このブラウザからログアウト" }).click()
+      const draftCount = (target: Page) => target.evaluate(() =>
+        Object.keys(sessionStorage).filter((key) => key.startsWith("mjstats.match-entry.v2:")).length)
+      await page.goto(entry)
+      await score().fill("44400")
+      expect(await draftCount(page)).toBe(1)
+      await page.clock.setFixedTime(Date.now() + 24 * 60 * 60 * 1000 + 1000)
+      await page.reload()
+      await expect(score()).toHaveValue("")
+      expect(await draftCount(page)).toBe(0)
+      await page.clock.setFixedTime(Date.now())
+
+      const sibling = await page.context().newPage()
+      try {
+        await sibling.goto(entry)
+        await sibling.getByLabel("素点 1", { exact: true }).fill("55500")
+        expect(await draftCount(sibling)).toBe(1)
+        await score().fill("66600")
+        await page.getByRole("link", { name: "アカウント" }).click()
+        await logout()
+        await expect(page).toHaveURL("/login")
+        await expect.poll(() => draftCount(sibling)).toBe(0)
+        expect(await draftCount(page)).toBe(0)
+        await page.goto(entry)
+        await signIn(page, owner)
+        await expect(score()).toHaveValue("")
+      } finally {
+        await sibling.close()
+      }
+
+      await score().fill("77700")
+      await page.goto(history)
+      await expect(page.getByText("−55 pt", { exact: false })).toBeVisible()
+      await page.context().clearCookies()
+      await page.goto(entry)
+      await signIn(page, member)
+      await expect(score()).toHaveValue("")
+      await expect(page.getByRole("button", { name: "同じ内容で再送" })).toHaveCount(0)
+      expect(await draftCount(page)).toBe(0)
+      await page.goBack()
+      await expect(page.getByRole("heading", { name: "ゲスト記録リーグの対局履歴" })).toBeVisible()
+      await expect(page.getByText("対局試験 メンバー", { exact: true }).first()).toBeVisible()
+      await expect(page.getByRole("link", { name: "招待を管理" })).toHaveCount(0)
+      await page.goto(`/matches/league/${b}`)
+      await expect(page.getByRole("main").getByRole("alert")).toContainText("このリーグは閲覧できません。")
+      await expect(page.getByText("−55 pt", { exact: false })).toHaveCount(0)
+    })
   } finally {
     if (leagues.length) {
       const ids = leagues.map((id) => `'${id}'`).join(",")

@@ -14,6 +14,7 @@ import { browserSupabase } from '@/lib/supabase/browser'
 import { clientAPI } from '@/lib/auth/client-api'
 import { APIError, type Viewer } from '@/lib/auth/api'
 import { loginPath } from '@/lib/auth/paths'
+import { explicitTabLogout } from '@/lib/leagues/match-drafts'
 import { Button } from '@/components/ui/button'
 
 type ViewerState = { viewer: Viewer; subject: string; setViewer: (viewer: Viewer) => void }
@@ -68,7 +69,6 @@ export function ViewerProvider({
       if (event === 'SIGNED_OUT') {
         invalidate()
         setStatus('signed-out')
-        window.location.replace(loginPath(path))
       } else if (session && session.user.id !== subject) {
         invalidate()
         setStatus('signed-out')
@@ -85,15 +85,18 @@ export function ViewerProvider({
     const onPageShow = (event: PageTransitionEvent) => {
       if (event.persisted) window.location.reload()
     }
+    const onExplicitLogout = () => window.location.replace(loginPath(path))
     document.addEventListener('visibilitychange', onVisible)
     window.addEventListener('pagehide', onPageHide)
     window.addEventListener('pageshow', onPageShow)
+    window.addEventListener(explicitTabLogout, onExplicitLogout)
     return () => {
       invalidate()
       subscription.unsubscribe()
       document.removeEventListener('visibilitychange', onVisible)
       window.removeEventListener('pagehide', onPageHide)
       window.removeEventListener('pageshow', onPageShow)
+      window.removeEventListener(explicitTabLogout, onExplicitLogout)
     }
   }, [path, subject, validate, invalidate])
   const progress =
