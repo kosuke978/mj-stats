@@ -563,3 +563,27 @@ Step 3では、対象リーグ所属のGo認可と共通ロックに、ゲスト
 | Go/Web/Postmanの契約 | PASS。Go全テスト・vet、Web lint・型検査・本番ビルド・単体4件。Postmanの32リクエストでYAMLとexportのメソッド/パス、Step 3のbody、環境変数・空の秘密値を照合 | `.local/step3-go-{test,vet}.log`、`.local/step3-web-{lint,types,build,unit}.log`、`.local/step3-postman.log` |
 
 通常Chromiumスイートの短期限メール専用設定、Safari・スマホ実機、Postman UI、管理QA・元共有DB・本番の適用と外部復旧演習は未実施。対象端末全体の表示・操作、ホームと共通ナビはStep 4。訂正・取消後の再送、本人紐付け解除、順位表はStep 5。実際の日時が不明な旧行のNULLと記録日時は隔離コピーで保全を確認した。旧行は通常履歴のブラウザ確認範囲から外れる。
+
+## Step 4の受入
+
+2026-11-19 JST。Phase 2.5 / Step 4の実装コミット `1217b32` を、専用ローカル `mj-stats-step1` のGo 1.26.2、PostgreSQL 17.12、Supabase Auth、Next.js 16.2.3本番モードで検証した。ブラウザ試験では試験用の本人・リーグ・対局を使用した。切断試験でGoからの初回成功応答をブラウザ試験側で遮断した。401は専用Authの試験セッションを失効させ、実Goで観測した。
+
+| 対象 | 確認結果 | 証跡 |
+| --- | --- | --- |
+| Q-09 / R-AUTH-01・02・04、D-27 | 戻り先なし・危険な指定でホームへ。旧直URLは認証と初回表示名設定後に復帰する。候補複数なら選択、有効な選択は用途別の履歴/入力へ、候補1件なら自動案内、0件なら作成・参加。失った所属への選択は破棄し、リーグ直URLは拒否する | `auth.spec.ts`、`league-history.spec.ts`、`.local/step4-web-unit.log` |
+| Q-10 / R-AUTH-04、D-28 | 有効なrefresh、失効後の再ログイン、localログアウトと別セッションの継続、SSRのno-store、別本人での戻る・再訪・リーグ切替を確認。下書きは保存成功、localログアウト（同セッションの別タブを含む）、本人切替、24時間経過で削除 | `auth.spec.ts`、`browser-restart.spec.ts`、`league-history.spec.ts`、`match-entry.spec.ts` |
+| Q-19 / R-NAV-01、D-39 | ホームからリーグ選択・入力・保存・履歴・詳細、未所属・読み込み中・履歴0件・取得失敗・閲覧拒否の次の操作を確認。招待リンクは同タブでログイン/表示名設定・メール確認を経て復帰し、プレビュー後の明示操作で参加した。検索名・番号からの参加も回帰 | `league-history.spec.ts`、`league-participation.spec.ts`、`match-entry.spec.ts`、`home-loading.png` |
+| Q-26 / R-AUTH-04・R-NAV-01・R-HISTORY-01・R-LEAGUE-01 | 初回保存201の応答を切断、再送で実Goの401、同じ本人でログイン後に本文をバイト単位で照合し、操作IDを維持して200・同じ対局ID。DBの対局1件・結果4件・版1件。再認証と別本人で下書き・履歴の分離、履歴フィルター・ページング、非所属・別リーグ拒否、正確な分数とゲストの元IDを確認 | `match-entry.spec.ts`、`league-history.spec.ts`、`.local/step4-go-integration.log` |
+| Step 1〜3関連回帰 | Go全テスト・vet・実Auth統合（作成、招待、参加、参照、履歴、対局）、Web lint・型検査・本番ビルド・単体4件。専用ローカル内の使い捨てDBで空DBから全12版、合成データと保存済みコピーの移行、旧5参加者・19対局・76結果の値・ID・参照の保全を確認 | `.local/step4-go-{test,vet,integration}.log`、`.local/step4-web-{lint,types,build,unit}.log`、`.local/step4-isolated-{migrations,copy}.log` |
+
+### D-39の端末・操作確認
+
+| 検証方法 | OSとブラウザ | 実施範囲・証跡 |
+| --- | --- | --- |
+| Playwright 1.65.1のデスクトップ実行と端末エミュレーション | macOS 26.5（25F71）、Chromium Headless Shell 159.0.8154.6、WebKit 27.2（r2388） | 360/390/768/1280 CSS px、文字200%（ルート文字サイズ32px）、縦表示と844×390の横表示。タッチでホームから入力へ進み、素点欄にフォーカス。キーボードでナビを移動してフォーカス表示を確認し、Enterでホームへ。読み込み中、入力、履歴の証跡は `.local/step4-browser-final/` と `.local/step4-webkit-final/` |
+| iPhone 17eシミュレータの実ブラウザ | iOS 26.5（23F77）、Mobile Safari 26.5（8624.2.5.10.4） | 約390 CSS px相当の縦表示と標準文字で、ログイン、ホーム、リーグホーム、入力、履歴0件を表示確認。撮影は表示修正のコミット `7af4106`。`.local/step4-ios-evidence/` と `.local/step4-ios-safari-final.log` |
+| 未実施 | iOS/Androidの物理端末、Android Chrome実ブラウザ、macOS Safari 26.5のWebDriver、対象ブラウザの前メジャー版 | macOS Safariのリモート自動操作が無効。iOSでの文字200%・横表示・物理タッチはエミュレーションの結果と区別する |
+
+Chromiumは12件PASS・1件SKIP、WebKitは対象11件PASS。結果は `.local/step4-browser-final.{log,json}` と `.local/step4-webkit-final.{log,json}` に保存した。通常スイートの短期限メール専用ケース、Postman UI、管理QA・元共有DB・本番への適用と環境別の総合受入は未実施。
+
+旧対局画面との互換のため履歴・入力・詳細の既存URLを維持した。下書きの24時間は通常編集または初回送信を起点とし、再送で延長しない。期限が記録されていない旧形式の下書きは破棄する。Step 4によるGo API・DBスキーマの変更はない。次Stepの順位表・設定・訂正/取消・本人紐付け解除は、リーグホームに接続し、Goで所属と役割を判定する。保存済み対局の分数・原参加者IDを保持する。
