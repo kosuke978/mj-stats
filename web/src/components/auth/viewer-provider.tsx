@@ -14,10 +14,16 @@ import { browserSupabase } from '@/lib/supabase/browser'
 import { clientAPI } from '@/lib/auth/client-api'
 import { APIError, type Viewer } from '@/lib/auth/api'
 import { loginPath } from '@/lib/auth/paths'
-import { explicitTabLogout } from '@/lib/leagues/match-drafts'
+import { discardInviteOnLogout } from '@/lib/auth/pending-invite'
+import { discardMatchDrafts, draftSessionID, explicitTabLogout } from '@/lib/leagues/match-drafts'
 import { Button } from '@/components/ui/button'
 
-type ViewerState = { viewer: Viewer; subject: string; setViewer: (viewer: Viewer) => void }
+type ViewerState = {
+  viewer: Viewer
+  subject: string
+  setViewer: (viewer: Viewer) => void
+  signOut: () => Promise<void>
+}
 const ViewerContext = createContext<ViewerState | null>(null)
 export function useViewer() {
   const state = useContext(ViewerContext)
@@ -39,6 +45,7 @@ export function ViewerProvider({
   >('ready')
   const path = usePathname()
   const generation = useRef(0)
+  const signingOut = useRef(false)
   const protectedContent = useRef<HTMLDivElement>(null)
   const invalidate = useCallback(() => {
     generation.current++
@@ -61,6 +68,20 @@ export function ViewerProvider({
       }
     }
   }, [initial.id, subject])
+  async function signOut() {
+    signingOut.current = true
+    try {
+      const supabase = browserSupabase()
+      const { data: { session } } = await supabase.auth.getSession()
+      const { error } = await supabase.auth.signOut({ scope: 'local' })
+      if (error) throw error
+      discardInviteOnLogout()
+      discardMatchDrafts(subject, session ? draftSessionID(session.access_token) : null)
+      window.location.replace('/login')
+    } finally {
+      signingOut.current = false
+    }
+  }
   useEffect(() => {
     const supabase = browserSupabase()
     let reauthentication: number | undefined
@@ -70,8 +91,9 @@ export function ViewerProvider({
       if (event === 'SIGNED_OUT' || (event === 'INITIAL_SESSION' && !session)) {
         invalidate()
         setStatus('signed-out')
-        // Let a local logout finish its storage cleanup before leaving this tab.
-        reauthentication = window.setTimeout(() => window.location.replace(loginPath(path)), 0)
+        if (!signingOut.current) {
+          reauthentication = window.setTimeout(() => window.location.replace(loginPath(path)), 0)
+        }
       } else if (session && session.user.id !== subject) {
         invalidate()
         setStatus('signed-out')
@@ -122,7 +144,7 @@ export function ViewerProvider({
     ) : null
   if (status === 'signed-out') return progress
   return (
-    <ViewerContext.Provider value={{ viewer, setViewer, subject }}>
+    <ViewerContext.Provider value={{ viewer, setViewer, subject, signOut }}>
       {progress}
       <div ref={protectedContent} hidden={status !== 'ready'}>
         <header className="border-b">

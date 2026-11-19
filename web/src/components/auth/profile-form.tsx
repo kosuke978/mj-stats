@@ -4,9 +4,6 @@ import { clientAPI } from '@/lib/auth/client-api'
 import { type Viewer } from '@/lib/auth/api'
 import { normalizeName } from '@/lib/auth/name'
 import { safeReturnTo } from '@/lib/auth/paths'
-import { discardInviteOnLogout } from '@/lib/auth/pending-invite'
-import { discardMatchDrafts, draftSessionID } from '@/lib/leagues/match-drafts'
-import { browserSupabase } from '@/lib/supabase/browser'
 import { useViewer } from './viewer-provider'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -19,7 +16,7 @@ export function ProfileForm({
   setup?: boolean
   returnTo?: string
 }) {
-  const { viewer, setViewer, subject } = useViewer()
+  const { viewer, setViewer, subject, signOut } = useViewer()
   const [name, setName] = useState(setup ? '' : viewer.name)
   const [busy, setBusy] = useState(false)
   const [message, setMessage] = useState('')
@@ -57,16 +54,7 @@ export function ProfileForm({
     setBusy(true)
     setMessage('')
     try {
-      const supabase = browserSupabase()
-      const { data: { session } } = await supabase.auth.getSession()
-      const { error } = await supabase.auth.signOut({ scope: 'local' })
-      if (error) {
-        setMessage('ログアウトを完了できませんでした。再試行してください。')
-        return
-      }
-      discardInviteOnLogout()
-      discardMatchDrafts(subject, session ? draftSessionID(session.access_token) : null)
-      window.location.replace('/login')
+      await signOut()
     } catch {
       setMessage('ログアウトを完了できませんでした。再試行してください。')
     } finally {
