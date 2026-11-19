@@ -11,7 +11,7 @@ export type StoredDraft = { draft: MatchDraft; expiresAt: number }
 
 export const draftLifetime = 24 * 60 * 60 * 1000
 export const draftsUpdated = 'mjstats:drafts-updated'
-export const draftLogout = 'mjstats.match-entry.logout'
+export const draftLogoutPrefix = 'mjstats.match-entry.logout:'
 export const explicitTabLogout = 'mjstats:explicit-tab-logout'
 const ownerKey = 'mjstats.match-entry.owner'
 const sessionKey = 'mjstats.match-entry.session'
@@ -83,28 +83,42 @@ function clearDrafts() {
   draftKeys().forEach((key) => sessionStorage.removeItem(key))
   sessionStorage.removeItem(ownerKey)
   sessionStorage.removeItem(sessionKey)
-  window.dispatchEvent(new Event(draftsUpdated))
 }
 
 export function discardMatchDrafts(subject: string, sessionID: string | null) {
   try {
-    if (sessionStorage.getItem(ownerKey) === subject) clearDrafts()
+    if (sessionStorage.getItem(ownerKey) === subject) {
+      clearDrafts()
+      window.dispatchEvent(new Event(draftsUpdated))
+    }
   } catch {}
   if (sessionID) {
     try {
-      localStorage.setItem(draftLogout, sessionID)
-      localStorage.removeItem(draftLogout)
+      // Keep the signal through a document reload or a frozen tab's return.
+      localStorage.setItem(draftLogoutPrefix + sessionID, String(Date.now() + draftLifetime))
     } catch {}
   }
 }
 
-export function discardDraftsForSession(sessionID: string) {
+export function reconcileDraftLogouts(): number | null {
+  let nextExpiry: number | null = null
   try {
-    if (sessionStorage.getItem(sessionKey) === sessionID) {
-      clearDrafts()
-      window.dispatchEvent(new Event(explicitTabLogout))
+    const sessionID = sessionStorage.getItem(sessionKey)
+    for (const key of Object.keys(localStorage)) {
+      if (!key.startsWith(draftLogoutPrefix)) continue
+      const expiry = Number(localStorage.getItem(key))
+      if (!Number.isFinite(expiry) || expiry <= Date.now()) {
+        localStorage.removeItem(key)
+        continue
+      }
+      if (sessionID && key === draftLogoutPrefix + sessionID) {
+        clearDrafts()
+        window.dispatchEvent(new Event(explicitTabLogout))
+      }
+      nextExpiry = Math.min(nextExpiry ?? expiry, expiry)
     }
   } catch {}
+  return nextExpiry
 }
 
 export function sweepMatchDrafts(): number | null {

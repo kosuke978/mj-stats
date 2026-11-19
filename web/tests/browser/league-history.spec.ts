@@ -13,7 +13,7 @@ function localSQL(input: string) {
   })
 }
 
-test('Q-14/Q-19/Q-26: scoped history, home states and legacy selection', async ({ page, request }, testInfo) => {
+test('Q-14/Q-19/Q-26: scoped history, home states and legacy selection', async ({ page, request, browserName }, testInfo) => {
   const config = JSON.parse(readFileSync('../.local/acceptance.json', 'utf8'))
   expect(config.API_URL).toBe('http://127.0.0.1:55421')
   const info = JSON.parse(execFileSync('docker', ['inspect', container], { encoding: 'utf8' }))[0]
@@ -141,7 +141,9 @@ test('Q-14/Q-19/Q-26: scoped history, home states and legacy selection', async (
       await expect.poll(async () => await locked.then(([chunk]) => String(chunk).trim())).toBe('locked')
       await page.goto('/', { waitUntil: 'commit' })
       await expect(page.getByRole('status').filter({ hasText: '所属リーグを読み込んでいます' })).toBeVisible({ timeout: 3000 })
-      await page.screenshot({ path: testInfo.outputPath('home-loading.png'), timeout: 3000 })
+      if (browserName === 'chromium') {
+        await page.screenshot({ path: testInfo.outputPath('home-loading.png'), timeout: 3000 })
+      }
     } finally {
       connection.stdin.end('COMMIT;\n')
       expect((await closed)[0]).toBe(0)

@@ -63,12 +63,15 @@ export function ViewerProvider({
   }, [initial.id, subject])
   useEffect(() => {
     const supabase = browserSupabase()
+    let reauthentication: number | undefined
     const {
       data: { subscription },
     } = supabase.auth.onAuthStateChange((event, session) => {
-      if (event === 'SIGNED_OUT') {
+      if (event === 'SIGNED_OUT' || (event === 'INITIAL_SESSION' && !session)) {
         invalidate()
         setStatus('signed-out')
+        // Let a local logout finish its storage cleanup before leaving this tab.
+        reauthentication = window.setTimeout(() => window.location.replace(loginPath(path)), 0)
       } else if (session && session.user.id !== subject) {
         invalidate()
         setStatus('signed-out')
@@ -92,6 +95,7 @@ export function ViewerProvider({
     window.addEventListener(explicitTabLogout, onExplicitLogout)
     return () => {
       invalidate()
+      window.clearTimeout(reauthentication)
       subscription.unsubscribe()
       document.removeEventListener('visibilitychange', onVisible)
       window.removeEventListener('pagehide', onPageHide)
