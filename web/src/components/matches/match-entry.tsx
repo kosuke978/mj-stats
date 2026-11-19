@@ -1,6 +1,6 @@
 "use client"
 
-import Link from "next/link"
+import { AppLink } from "@/components/navigation/app-link"
 import { useRef, useState, useSyncExternalStore } from "react"
 import { useViewer } from "@/components/auth/viewer-provider"
 import { leagueMessage, useLeagueAction } from "@/components/leagues/league-api"
@@ -199,7 +199,7 @@ function EntryForm({ leagueID, participants: initial, rules, seasons, storageKey
     <section className="space-y-4 rounded-lg border p-4">
       <p role="status">対局を保存しました。</p>
       <div className="flex flex-wrap items-center gap-4">
-        <Link className="underline" href={`${history}/${saved.id}`} prefetch={false}>保存した対局を見る</Link>
+        <AppLink className="underline" href={`${history}/${saved.id}`}>保存した対局を見る</AppLink>
         <Button variant="outline" onClick={() => setSaved(null)}>次の対局を入力</Button>
       </div>
     </section>

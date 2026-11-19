@@ -55,7 +55,7 @@ export function PasswordForm() {
       <p role="status">{message}</p>
       <Link
         className="inline-block underline"
-        href={done ? '/matches' : '/password/reset'}
+        href={done ? '/' : '/password/reset'}
       >
         {done ? 'MJ-Stats に戻る' : '新しい再設定メールを依頼'}
       </Link>

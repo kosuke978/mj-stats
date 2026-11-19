@@ -1,5 +1,6 @@
-import Link from "next/link"
+import { AppLink } from "@/components/navigation/app-link"
 import { MatchCard } from "@/components/match-card"
+import { LeagueNavigation } from "@/components/navigation/navigation"
 import { APIError } from "@/lib/auth/api"
 import { serverAPI } from "@/lib/auth/server"
 import type { MatchHistory, MatchRule, Season } from "@/types/match"
@@ -22,6 +23,7 @@ export default async function MatchDetailPage({ params }: { params: Promise<{ le
     const season = seasons.find((item) => item.id === match.season_id)
     content = (
       <>
+        <LeagueNavigation id={match.league_id} />
         <dl className="space-y-2 text-sm">
           <div><dt className="font-medium">適用ルール</dt><dd className="break-all">{rule?.name ?? match.rule_id}</dd></div>
           {rule && <div><dt className="font-medium">計算条件</dt><dd>{rule.default_points.toLocaleString("ja-JP")}点持ち、{rule.return_points.toLocaleString("ja-JP")}点返し、ウマ {rule.uma.join(" / ")}</dd></div>}
@@ -32,11 +34,21 @@ export default async function MatchDetailPage({ params }: { params: Promise<{ le
     )
   } catch (error) {
     if (!(error instanceof APIError || error instanceof TypeError)) throw error
-    content = <p role="alert">{error instanceof APIError ? error.message : "対局を取得できませんでした。"}</p>
+    const denied = error instanceof APIError && error.code === "LEAGUE_ACCESS_DENIED"
+    const missing = error instanceof APIError && [400, 404].includes(error.status)
+    content = (
+      <>
+        <p role="alert">{denied ? "このリーグは閲覧できません。" : missing ? "対局を確認できませんでした。" : "対局を取得できませんでした。"}</p>
+        <div className="flex flex-wrap gap-4 underline">
+          {denied && <AppLink href="/leagues/search">リーグに参加</AppLink>}
+          {denied ? <AppLink href="/">所属リーグ一覧へ</AppLink> : <AppLink href={history}>対局履歴へ</AppLink>}
+          {!denied && !missing && <AppLink href={path}>再試行</AppLink>}
+        </div>
+      </>
+    )
   }
   return (
     <main className="mx-auto w-full max-w-2xl space-y-5 px-4 py-6">
-      <Link href={history} className="text-sm underline" prefetch={false}>対局履歴へ</Link>
       <h1 className="text-2xl font-bold">対局詳細</h1>
       {content}
     </main>

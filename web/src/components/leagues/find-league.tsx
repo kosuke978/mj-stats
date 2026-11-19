@@ -1,7 +1,7 @@
 'use client'
 
 import { useRef, useState } from 'react'
-import Link from 'next/link'
+import { AppLink } from '@/components/navigation/app-link'
 import { useViewer } from '@/components/auth/viewer-provider'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -88,11 +88,11 @@ export function FindLeague() {
           <ul className="divide-y rounded-md border">
             {results.leagues.map((l) => (
               <li key={l.id}>
-                <Link href={`/join/${l.group_number}`} prefetch={false}
+                <AppLink href={`/join/${l.group_number}`}
                   className="flex flex-wrap items-baseline justify-between gap-2 p-3 hover:bg-muted">
                   <span className="wrap-anywhere">{l.name}</span>
                   <span className="font-mono text-sm text-muted-foreground">{l.group_number}</span>
-                </Link>
+                </AppLink>
               </li>
             ))}
           </ul>

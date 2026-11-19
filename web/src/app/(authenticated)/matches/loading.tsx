@@ -23,12 +23,13 @@ function MatchCardSkeleton() {
 export default function MatchesLoadingPage() {
   return (
     <main className="mx-auto flex min-h-dvh w-full max-w-2xl flex-col px-4 py-6">
-      <header className="mb-5 space-y-1">
+      <p role="status" className="mb-4">対局ページを読み込んでいます…</p>
+      <header aria-hidden className="mb-5 space-y-1">
         <Skeleton className="h-8 w-44" />
         <Skeleton className="h-4 w-64" />
       </header>
 
-      <section className="space-y-4">
+      <section aria-hidden className="space-y-4">
         {Array.from({ length: 3 }).map((_, index) => (
           <MatchCardSkeleton key={index} />
         ))}

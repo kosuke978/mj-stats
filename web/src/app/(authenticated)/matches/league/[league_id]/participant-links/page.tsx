@@ -1,4 +1,4 @@
-import Link from "next/link"
+import { AppLink } from "@/components/navigation/app-link"
 import { ParticipantLinks } from "@/components/matches/participant-links"
 import { APIError } from "@/lib/auth/api"
 import { referencePages } from "@/lib/auth/reference-pages"
@@ -25,7 +25,7 @@ export default async function ParticipantLinksPage({ params }: { params: Promise
   }
   return (
     <main className="mx-auto w-full max-w-2xl space-y-5 px-4 py-6">
-      <Link href={history} className="text-sm underline" prefetch={false}>対局履歴へ</Link>
+      <AppLink href={history} className="text-sm underline">対局履歴へ</AppLink>
       <h1 className="text-2xl font-bold">ゲストの本人紐付け</h1>
       {data ? <ParticipantLinks league={data[0].league} participants={data[1]} initial={data[2]} /> : <p role="alert">{message}</p>}
     </main>

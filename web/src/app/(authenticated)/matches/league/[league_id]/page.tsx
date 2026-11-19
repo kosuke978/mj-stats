@@ -1,5 +1,6 @@
-import Link from "next/link"
+import { AppLink } from "@/components/navigation/app-link"
 import { MatchCard } from "@/components/match-card"
+import { LeagueNavigation } from "@/components/navigation/navigation"
 import { buttonVariants } from "@/components/ui/button"
 import { APIError } from "@/lib/auth/api"
 import { serverAPI } from "@/lib/auth/server"
@@ -18,8 +19,9 @@ function HistoryError({ message, path }: { message: string; path?: string }) {
       <h1 className="text-2xl font-bold">対局履歴</h1>
       <p role="alert">{message}</p>
       <div className="flex flex-wrap gap-4">
-        {path && <Link href={path} prefetch={false} className="underline">履歴を読み直す</Link>}
-        <Link href="/matches" prefetch={false} className="underline">所属リーグ一覧へ</Link>
+        {path && <AppLink href={path} className="underline">履歴を読み直す</AppLink>}
+        <AppLink href="/" className="underline">所属リーグ一覧へ</AppLink>
+        {!path && <AppLink href="/leagues/search" className="underline">リーグに参加</AppLink>}
       </div>
     </main>
   )
@@ -81,15 +83,12 @@ export default async function LeagueHistoryPage({
   return (
     <main className="mx-auto w-full max-w-2xl space-y-5 px-4 py-6">
       <header className="space-y-2">
-        <Link href="/matches" prefetch={false} className="text-sm underline">リーグを切り替える</Link>
         <h1 className="text-2xl font-bold wrap-anywhere">{league.name}の対局履歴</h1>
-        <nav aria-label="リーグ内の操作" className="flex flex-wrap items-center gap-3 text-sm">
-          <Link href={path + "/new"} prefetch={false} className={buttonVariants({ size: "sm" })}>対局を入力</Link>
-          <Link href={path + "/participant-links"} prefetch={false} className="underline">ゲストの本人紐付け</Link>
-          {league.my_role !== "member" && (
-            <Link href={path + "/invites"} prefetch={false} className="underline">招待を管理</Link>
-          )}
-        </nav>
+        <LeagueNavigation id={league.id} active="history" />
+        <div className="flex flex-wrap gap-4 text-sm underline">
+          <AppLink href={path + "/participant-links"}>ゲストの本人紐付け</AppLink>
+          {league.my_role !== "member" && <AppLink href={path + "/invites"}>招待を管理</AppLink>}
+        </div>
       </header>
       <form action={path} method="get" className="flex flex-wrap items-end gap-2">
         <label className="grid min-w-0 gap-1 text-sm">
@@ -106,21 +105,24 @@ export default async function LeagueHistoryPage({
       </form>
       {(seasonCursor || seasonPage.next_cursor) && (
         <nav aria-label="シーズン候補のページ" className="flex flex-wrap gap-4 text-sm underline">
-          {seasonCursor && <Link href={pageLink(path, { season })} prefetch={false}>最初の候補</Link>}
-          {seasonPage.next_cursor && <Link href={pageLink(path, { season, season_cursor: seasonPage.next_cursor })} prefetch={false}>さらに候補を表示</Link>}
+          {seasonCursor && <AppLink href={pageLink(path, { season })}>最初の候補</AppLink>}
+          {seasonPage.next_cursor && <AppLink href={pageLink(path, { season, season_cursor: seasonPage.next_cursor })}>さらに候補を表示</AppLink>}
         </nav>
       )}
       {history.matches.length === 0 ? (
-        <p className="rounded-lg border border-dashed p-4 text-sm">対象の対局はありません。</p>
+        <section className="space-y-3 rounded-lg border border-dashed p-4 text-sm">
+          <p>対象の対局はありません。</p>
+          <AppLink href={path + "/new"} className="inline-block underline">対局を記録する</AppLink>
+        </section>
       ) : (
         <section className="space-y-4" aria-label="対局一覧">
           {history.matches.map((match) => <MatchCard key={match.id} match={match} detailURL={`${path}/${match.id}`} />)}
         </section>
       )}
       {history.next_cursor && (
-        <Link href={pageLink(path, { season, cursor: history.next_cursor })} prefetch={false} className="underline">
+        <AppLink href={pageLink(path, { season, cursor: history.next_cursor })} className="underline">
           次の対局を表示
-        </Link>
+        </AppLink>
       )}
     </main>
   )

@@ -13,12 +13,12 @@ import { Label } from '@/components/ui/label'
 
 export function ProfileForm({
   setup = false,
-  returnTo = '/matches',
+  returnTo = '/',
 }: {
   setup?: boolean
   returnTo?: string
 }) {
-  const { viewer, setViewer } = useViewer()
+  const { viewer, setViewer, subject } = useViewer()
   const [name, setName] = useState(setup ? '' : viewer.name)
   const [busy, setBusy] = useState(false)
   const [message, setMessage] = useState('')
@@ -37,7 +37,7 @@ export function ProfileForm({
       const updated = await clientAPI<Viewer>('/api/users/me', {
         method: 'PATCH',
         body: JSON.stringify({ name: normalized }),
-      })
+      }, subject)
       setViewer(updated)
       setName(updated.name)
       if (setup) window.location.replace(safeReturnTo(returnTo))

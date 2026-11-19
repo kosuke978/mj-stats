@@ -1,4 +1,4 @@
-import Link from 'next/link'
+import { AppLink } from '@/components/navigation/app-link'
 import { InviteManagement } from '@/components/leagues/invite-management'
 import { APIError } from '@/lib/auth/api'
 import { serverAPI } from '@/lib/auth/server'
@@ -24,8 +24,8 @@ export default async function InvitesPage({ params }: { params: Promise<{ league
   return (
     <main className="mx-auto w-full max-w-lg space-y-4 px-4 py-6">
       <nav className="flex flex-wrap gap-4 text-sm underline">
-        <Link href="/matches" prefetch={false}>所属リーグ一覧へ</Link>
-        {league && <Link href={history} prefetch={false}>対局履歴へ</Link>}
+        <AppLink href="/">所属リーグ一覧へ</AppLink>
+        {league && <AppLink href={history}>対局履歴へ</AppLink>}
       </nav>
       <h1 className="text-2xl font-bold">リーグの招待</h1>
       {canManage && league ? (

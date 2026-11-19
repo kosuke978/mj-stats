@@ -166,7 +166,7 @@ test("Step 3: real guest entry, exact history and recovery after a lost save res
     await expect(page.getByText("499/30 pt", { exact: true }).filter({ visible: true })).toHaveCount(1)
     await expect(page.getByText("未指定", { exact: true })).toBeVisible()
 
-    await page.getByRole("link", { name: "対局履歴へ" }).click()
+    await page.getByRole("link", { name: "対局履歴", exact: true }).click()
     await expect(page.getByText("+16.6333… pt", { exact: false })).toHaveCount(3)
     await page.getByRole("link", { name: "ゲストの本人紐付け" }).click()
     await page.getByRole("combobox", { name: "ゲスト", exact: true }).selectOption(guests[0])
@@ -181,7 +181,7 @@ test("Step 3: real guest entry, exact history and recovery after a lost save res
     await expect(page.getByText("対局試験 オーナー", { exact: false }).filter({ hasText: "1位" })).toBeVisible()
     expect(localSQL(`SELECT count(*) FROM public.match_results WHERE match_id='${matchID}' AND user_id='${guests[0]}'`)).toBe("1")
 
-    await page.getByRole("link", { name: "対局履歴へ" }).click()
+    await page.getByRole("link", { name: "対局履歴", exact: true }).click()
     await page.getByRole("link", { name: "対局を入力" }).click()
     await expect(page.getByLabel("素点 1", { exact: true })).toHaveValue("")
     const nextScores = ["60000", "30000", "15000", "-5000"]

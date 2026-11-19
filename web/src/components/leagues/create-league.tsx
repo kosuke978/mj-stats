@@ -1,6 +1,7 @@
 'use client'
 
 import { useState } from 'react'
+import { leagueHome } from '@/lib/leagues/paths'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -16,7 +17,7 @@ export function CreateLeague() {
       path: '/api/leagues',
       body: { name, client_request_id: crypto.randomUUID() },
     })
-    if (result) window.location.assign(`/matches/league/${result.league.id}`)
+    if (result) window.location.assign(leagueHome(result.league.id))
   }
 
   return (

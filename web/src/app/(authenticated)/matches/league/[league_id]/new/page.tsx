@@ -1,5 +1,6 @@
-import Link from "next/link"
+import { AppLink } from "@/components/navigation/app-link"
 import { MatchEntry } from "@/components/matches/match-entry"
+import { LeagueNavigation } from "@/components/navigation/navigation"
 import { APIError } from "@/lib/auth/api"
 import { referencePages } from "@/lib/auth/reference-pages"
 import { serverAPI } from "@/lib/auth/server"
@@ -21,19 +22,23 @@ export default async function MatchEntryPage({ params }: { params: Promise<{ lea
     ])
   } catch (error) {
     if (!(error instanceof APIError || error instanceof TypeError)) throw error
+    const denied = error instanceof APIError && error.code === "LEAGUE_ACCESS_DENIED"
     return (
       <main className="mx-auto max-w-2xl space-y-4 px-4 py-6">
         <h1 className="text-2xl font-bold">対局入力</h1>
-        <p role="alert">{error instanceof APIError ? error.message : "入力候補を取得できませんでした。"}</p>
-        <Link href={history} className="underline" prefetch={false}>対局履歴へ</Link>
+        <p role="alert">{denied ? "このリーグは閲覧できません。" : "入力候補を取得できませんでした。"}</p>
+        <div className="flex flex-wrap gap-4 underline">
+          {denied ? <AppLink href="/leagues/search">リーグに参加</AppLink> : <AppLink href={path}>再試行</AppLink>}
+          <AppLink href="/">所属リーグ一覧へ</AppLink>
+        </div>
       </main>
     )
   }
   const [{ league }, participants, rules, seasons] = data
   return (
-      <main className="mx-auto w-full max-w-2xl space-y-5 px-4 py-6">
-        <Link href={history} className="text-sm underline" prefetch={false}>対局履歴へ</Link>
+    <main className="mx-auto w-full max-w-2xl space-y-5 px-[min(1rem,4vw)] py-6">
         <h1 className="text-2xl font-bold wrap-anywhere">{league.name}の対局入力</h1>
+      <LeagueNavigation id={league.id} active="entry" />
         <MatchEntry leagueID={league.id} participants={participants} rules={rules} seasons={seasons} />
       </main>
     )

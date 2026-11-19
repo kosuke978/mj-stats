@@ -1,4 +1,4 @@
-import Link from 'next/link'
+import { AppLink } from '@/components/navigation/app-link'
 import { ProfileForm } from '@/components/auth/profile-form'
 import { requireViewer } from '@/lib/auth/server'
 export default async function AccountPage() {
@@ -7,9 +7,9 @@ export default async function AccountPage() {
     <main className="mx-auto w-full max-w-lg space-y-5 px-4 py-8">
       <h1 className="text-2xl font-bold">アカウント</h1>
       <ProfileForm />
-      <Link className="inline-block underline" href="/matches">
-        対局履歴へ
-      </Link>
+      <AppLink className="inline-block underline" href="/">
+        所属リーグ一覧へ
+      </AppLink>
     </main>
   )
 }
