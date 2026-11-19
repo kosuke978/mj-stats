@@ -3,7 +3,7 @@ import { MatchCard } from "@/components/match-card"
 import { LeagueNavigation } from "@/components/navigation/navigation"
 import { APIError } from "@/lib/auth/api"
 import { serverAPI } from "@/lib/auth/server"
-import type { MatchHistory, MatchRule, Season } from "@/types/match"
+import type { League, MatchHistory, MatchRule, Season } from "@/types/match"
 import { referencePages } from "@/lib/auth/reference-pages"
 
 export default async function MatchDetailPage({ params }: { params: Promise<{ league_id: string; match_id: string }> }) {
@@ -15,9 +15,10 @@ export default async function MatchDetailPage({ params }: { params: Promise<{ le
   let content
   try {
     const match = await serverAPI<MatchHistory>(`${endpoint}/matches/${encodeURIComponent(match_id)}`, path)
-    const [rules, seasons] = await Promise.all([
+    const [rules, seasons, { league }] = await Promise.all([
       referencePages<MatchRule>(endpoint, "rules", path, { available: "all" }),
       match.season_id ? referencePages<Season>(endpoint, "seasons", path) : Promise.resolve([]),
+      serverAPI<{ league: League }>(endpoint, path),
     ])
     const rule = rules.find((item) => item.id === match.rule_id)
     const season = seasons.find((item) => item.id === match.season_id)
@@ -30,6 +31,10 @@ export default async function MatchDetailPage({ params }: { params: Promise<{ le
           <div><dt className="font-medium">シーズン</dt><dd>{season?.name ?? match.season_id ?? "未指定"}</dd></div>
         </dl>
         <MatchCard match={match} />
+        {league.my_role !== "member" && <div className="flex flex-wrap gap-2">
+          {match.status === "valid" && <AppLink className="min-h-11 p-2 underline" href={`${path}/edit`}>訂正・取消</AppLink>}
+          <AppLink className="min-h-11 p-2 underline" href={`${path}/revisions`}>変更履歴</AppLink>
+        </div>}
       </>
     )
   } catch (error) {

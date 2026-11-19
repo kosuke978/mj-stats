@@ -70,7 +70,7 @@ export type ParticipantLink = {
   guest_name: string
   registered_user_id: string
   registered_name: string
-  status: "pending" | "active" | "rejected"
+  status: "pending" | "active" | "rejected" | "revoked"
   version: string
   consented_at: string
   reviewed_by: string | null

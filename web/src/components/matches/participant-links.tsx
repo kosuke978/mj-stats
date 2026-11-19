@@ -20,22 +20,22 @@ export function ParticipantLinks({ league, participants, initial }: { league: Le
     !initial.some((item) => item.guest_user_id === p.id && item.status === "active"))
   const disabled = action.busy || action.retry
 
-  async function submit(kind?: "request" | "approve" | "reject", link?: ParticipantLink) {
+  async function submit(kind?: "request" | "approve" | "reject" | "revoke", link?: ParticipantLink) {
     const id = crypto.randomUUID()
     const post: Post | null = kind === "request"
       ? { path: endpoint, body: { guest_user_id: guest, client_request_id: id } }
       : link && kind
-        ? { path: `${endpoint}/${link.id}/${kind}`, body: { confirmation_note: note, version: link.version, client_request_id: id } }
+        ? { path: `${endpoint}/${link.id}/${kind}`, body: { ...(kind === "revoke" ? { reason: note } : { confirmation_note: note }), version: link.version, client_request_id: id } }
         : null
     setNotice("")
-    const result = await action.run<{ participant_link: ParticipantLink }>(post)
+    const result = await action.run<{ participant_link?: ParticipantLink }>(post)
     if (!result) return
     setGuest("")
     setConsent(false)
     setSelected("")
     setNote("")
-    const state = result.participant_link.status
-    setNotice(state === "pending" ? "本人申請を記録しました。" : state === "active" ? "本人紐付けを承認しました。" : "申請を却下しました。")
+    const state = result.participant_link?.status
+    setNotice(state === "pending" ? "本人申請を記録しました。" : state === "active" ? "本人紐付けを承認しました。" : state === "rejected" ? "申請を却下しました。" : "本人紐付けを解除しました。")
     router.refresh()
   }
 
@@ -66,7 +66,7 @@ export function ParticipantLinks({ league, participants, initial }: { league: Le
         {initial.map((link) => (
           <div key={link.id} className="space-y-2 rounded-lg border p-4 text-sm">
             <p className="wrap-anywhere">{link.guest_name}（{link.guest_user_id.slice(0, 8)}） → {link.registered_name}（{link.registered_user_id.slice(0, 8)}）</p>
-            <p>{link.status === "active" ? "承認済み" : link.status === "rejected" ? "却下済み" : "確認待ち"}</p>
+            <p>{link.status === "active" ? "承認済み" : link.status === "rejected" ? "却下済み" : link.status === "revoked" ? "解除済み" : "確認待ち"}</p>
             {link.confirmation_note && <p className="whitespace-pre-wrap wrap-anywhere">{link.confirmation_note}</p>}
             {league.my_role !== "member" && link.status === "pending" && (
               selected === link.id ? (
@@ -86,6 +86,17 @@ export function ParticipantLinks({ league, participants, initial }: { league: Le
                   setNote("")
                 }}>申請を確認</Button>
               )
+            )}
+            {league.my_role === "owner" && link.status === "active" && (
+              selected === link.id
+                ? <fieldset disabled={disabled} className="space-y-2">
+                    <label className="grid gap-1">解除理由
+                      <textarea maxLength={500} className="min-h-20 w-full rounded-md border bg-background p-2" value={note} onChange={(e) => setNote(e.target.value)} />
+                    </label>
+                    <p>元のゲストに成績を戻します。対局結果は保持されます。</p>
+                    <Button variant="destructive" className="min-h-11" onClick={() => void submit("revoke", link)} disabled={!note.trim()}>本人紐付けを解除する</Button>
+                  </fieldset>
+                : <Button variant="outline" className="min-h-11" disabled={disabled} onClick={() => { setSelected(link.id); setNote("") }}>紐付け解除</Button>
             )}
           </div>
         ))}

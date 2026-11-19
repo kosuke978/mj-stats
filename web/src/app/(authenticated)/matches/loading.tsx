@@ -25,8 +25,8 @@ export default function MatchesLoadingPage() {
     <main className="mx-auto flex min-h-dvh w-full max-w-2xl flex-col px-4 py-6">
       <p role="status" className="mb-4">対局ページを読み込んでいます…</p>
       <header aria-hidden className="mb-5 space-y-1">
-        <Skeleton className="h-8 w-44" />
-        <Skeleton className="h-4 w-64" />
+        <Skeleton className="h-8 w-44 max-w-full" />
+        <Skeleton className="h-4 w-64 max-w-full" />
       </header>
 
       <section aria-hidden className="space-y-4">

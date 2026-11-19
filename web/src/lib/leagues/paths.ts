@@ -5,3 +5,5 @@ export function leagueHome(id: string) {
 export function leagueHistory(id: string) {
   return `/matches/league/${encodeURIComponent(id)}`
 }
+
+export const leagueRoles = { owner: "オーナー", admin: "管理者", member: "メンバー" }

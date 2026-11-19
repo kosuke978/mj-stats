@@ -12,7 +12,7 @@ export function LeagueActions() {
   )
 }
 
-export function LeagueNavigation({ id, active }: { id: string; active?: 'home' | 'entry' | 'history' }) {
+export function LeagueNavigation({ id, active }: { id: string; active?: 'home' | 'entry' | 'history' | 'ranking' }) {
   const history = leagueHistory(id)
   return (
     <nav aria-label="リーグ内の操作" className="flex flex-wrap gap-x-2 text-sm">
@@ -20,6 +20,7 @@ export function LeagueNavigation({ id, active }: { id: string; active?: 'home' |
       <AppLink className={navLink} href={leagueHome(id)} aria-current={active === 'home' ? 'page' : undefined}>リーグホーム</AppLink>
       <AppLink className={navLink} href={`${history}/new`} aria-current={active === 'entry' ? 'page' : undefined}>対局を入力</AppLink>
       <AppLink className={navLink} href={history} aria-current={active === 'history' ? 'page' : undefined}>対局履歴</AppLink>
+      <AppLink className={navLink} href={`${leagueHome(id)}/ranking`} aria-current={active === 'ranking' ? 'page' : undefined}>順位表</AppLink>
     </nav>
   )
 }

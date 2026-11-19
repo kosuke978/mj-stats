@@ -1,6 +1,6 @@
 import type { ExactPoint, MatchHistoryResult } from "@/types/match"
 
-function displayPoint(point: ExactPoint) {
+export function displayPoint(point: ExactPoint) {
   const zero = BigInt(0)
   const one = BigInt(1)
   const ten = BigInt(10)

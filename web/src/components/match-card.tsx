@@ -29,6 +29,9 @@ export function MatchCard({ match, detailURL }: { match: MatchHistory; detailURL
         </CardTitle>
       </CardHeader>
       <CardContent>
+        {match.status === "cancelled"
+          ? <p className="mb-2 font-semibold text-destructive">取消済み · 順位表の集計対象外</p>
+          : match.version !== "1" && <p className="mb-2 font-semibold">訂正済み</p>}
         <ResultList results={match.results} detailed={!detailURL} />
         {detailURL && <AppLink className="mt-3 inline-block text-sm underline" href={detailURL}>対局詳細</AppLink>}
       </CardContent>
