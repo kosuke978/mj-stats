@@ -25,6 +25,8 @@ import (
 	"github.com/golang-jwt/jwt/v5"
 	"github.com/joho/godotenv"
 	"github.com/kosuke/mj-stats-api/auth"
+	"github.com/kosuke/mj-stats-api/controllers"
+	"github.com/kosuke/mj-stats-api/invites"
 	"github.com/lib/pq"
 )
 
@@ -73,7 +75,21 @@ func TestStep1RealDBAuth(t *testing.T) {
 	if e != nil {
 		t.Fatal(e)
 	}
-	api := httptest.NewServer(router(db, verifier, []string{"http://localhost:3000"}, nil, nil, nil))
+	const localOrigin = "http://localhost:3000"
+	var randomKey [32]byte
+	if _, err := rand.Read(randomKey[:]); err != nil {
+		t.Fatal("create local fixture key")
+	}
+	key := base64.StdEncoding.EncodeToString(randomKey[:])
+	configuration, err := invites.NewConfig(localOrigin, `{"1":"`+key+`"}`, "1")
+	if err != nil {
+		t.Fatal("configure local invitations")
+	}
+	attempts, err := controllers.NewAttemptLimiter(key, "", "", "")
+	if err != nil {
+		t.Fatal("configure local invite limits")
+	}
+	api := httptest.NewServer(router(db, verifier, []string{localOrigin}, configuration, attempts, nil))
 	defer api.Close()
 	ctx, cancel := context.WithTimeout(context.Background(), 90*time.Second)
 	defer cancel()
@@ -363,6 +379,26 @@ func TestStep1RealDBAuth(t *testing.T) {
 
 	t.Run("LeagueMatches", func(t *testing.T) {
 		testLeagueMatches(t, ctx, admin, call, a.Access, other.Access, participant, sameName["id"].(string))
+	})
+
+	t.Run("Step5", func(t *testing.T) {
+		email, password, authID := create()
+		third := login(email, password)
+		verifyStatus(t, call, "GET", "/api/users/me", third.Access, 200, "")
+		code, body := call("PATCH", "/api/users/me", third.Access, `{"name":"Step 5 fixture"}`)
+		id, ok := body["id"].(string)
+		if code != 200 || !ok {
+			t.Fatal("Step 5 fixture profile")
+		}
+		t.Cleanup(func() {
+			if _, err := admin.Exec("DELETE FROM public.users WHERE id=$1", id); err != nil {
+				t.Error("cleanup Step 5 participant")
+			}
+			if code, _ := authCall("DELETE", "/admin/users/"+authID, status["SERVICE_ROLE_KEY"], nil); code != 200 {
+				t.Error("cleanup Step 5 Auth user")
+			}
+		})
+		testStep5(t, ctx, admin, call, a.Access, other.Access, third.Access, participant, sameName["id"].(string), id)
 	})
 
 	before = fingerprint()

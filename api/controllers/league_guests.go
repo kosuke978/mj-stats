@@ -74,7 +74,7 @@ const linkFields = `'id',p.id,'league_id',p.league_id,'guest_user_id',p.guest_us
 	'status',p.status,'version',p.version::text,
 	'consented_at',to_char(p.consented_at AT TIME ZONE 'UTC','YYYY-MM-DD"T"HH24:MI:SS.US"Z"'),
 	'reviewed_by',p.reviewed_by,'reviewed_at',to_char(p.reviewed_at AT TIME ZONE 'UTC','YYYY-MM-DD"T"HH24:MI:SS.US"Z"'),
-	'confirmation_note',p.confirmation_note`
+	'confirmation_note',p.confirmation_note,'revoked_by',p.revoked_by,'revoked_at',p.revoked_at`
 const linkSource = `FROM public.participant_links p
 	JOIN public.users g ON g.id=p.guest_user_id JOIN public.users u ON u.id=p.registered_user_id`
 

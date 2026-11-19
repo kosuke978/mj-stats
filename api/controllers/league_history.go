@@ -3,7 +3,6 @@ package controllers
 import (
 	"context"
 	"database/sql"
-	"strings"
 
 	"github.com/gin-gonic/gin"
 	"github.com/kosuke/mj-stats-api/httpx"
@@ -39,10 +38,7 @@ func (lc *LeagueController) history(c *gin.Context, ctx context.Context, tx *sql
 	if !ok {
 		return nil
 	}
-	season, status := q.Get("season"), q.Get("status")
-	if season == "" {
-		season = "all"
-	}
+	status := q.Get("status")
 	if status == "" {
 		status = "all"
 	}
@@ -50,29 +46,13 @@ func (lc *LeagueController) history(c *gin.Context, ctx context.Context, tx *sql
 		invalidQuery(c, "status")
 		return nil
 	}
-	var seasonID any
-	if season != "all" && season != "unassigned" {
-		if !uuidPattern.MatchString(season) {
-			invalidQuery(c, "season")
-			return nil
-		}
-		season = strings.ToLower(season)
-		seasonID = season
-	}
-	limit, cursor, ok := pageInput(c, q, l, "matches", season+"/"+status, historyKeys)
+	filter, ok := parseSeasonFilter(c, q.Get("season"))
 	if !ok {
 		return nil
 	}
-	if seasonID != nil {
-		var exists bool
-		if err := tx.QueryRowContext(ctx, `SELECT EXISTS(SELECT 1 FROM public.seasons WHERE league_id=$1 AND id=$2)`, l.ID, seasonID).Scan(&exists); err != nil {
-			httpx.Unavailable(c)
-			return nil
-		}
-		if !exists {
-			httpx.Error(c, 404, "NOT_FOUND", "シーズンが見つかりません", nil)
-			return nil
-		}
+	limit, cursor, ok := pageInput(c, q, l, "matches", filter.Name+"/"+status, historyKeys)
+	if !ok || !filter.exists(c, ctx, tx, l.ID) {
+		return nil
 	}
 	var after any
 	if cursor.ID != "" {
@@ -80,7 +60,7 @@ func (lc *LeagueController) history(c *gin.Context, ctx context.Context, tx *sql
 	} else {
 		cursor.Key, cursor.Second = "-infinity", "-infinity"
 	}
-	rows, err := tx.QueryContext(ctx, leagueHistorySQL, l.ID, season, seasonID, after, cursor.Key, cursor.Second, limit+1, status)
+	rows, err := tx.QueryContext(ctx, leagueHistorySQL, l.ID, filter.Name, filter.ID, after, cursor.Key, cursor.Second, limit+1, status)
 	return pageResponse(c, rows, err, limit, cursor)
 }
 
