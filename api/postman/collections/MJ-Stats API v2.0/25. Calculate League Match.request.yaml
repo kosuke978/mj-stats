@@ -1,0 +1,32 @@
+$kind: http-request
+description: "所属リーグの利用可能ルールと4人を指定。200。点数をDBへ保存せず正確なpointを返す。"
+url: "{{base_url}}/api/leagues/{{league_id}}/matches/calculate"
+method: POST
+headers:
+  Authorization: "Bearer {{access_token}}"
+  Content-Type: application/json
+body:
+  type: json
+  content: |
+    {
+      "rule_id": "{{rule_id}}",
+      "players": [
+        {
+          "user_id": "{{player_1_id}}",
+          "raw_score": 33300
+        },
+        {
+          "user_id": "{{player_2_id}}",
+          "raw_score": 33300
+        },
+        {
+          "user_id": "{{player_3_id}}",
+          "raw_score": 33300
+        },
+        {
+          "user_id": "{{player_4_id}}",
+          "raw_score": 100
+        }
+      ]
+    }
+order: 26000

@@ -546,3 +546,20 @@ Step 3では、対象リーグ所属のGo認可と共通ロックに、ゲスト
 | 回帰・検査 | PASS。Go全テスト・vet、実DB/Authの `TestStep1RealDBAuth`、Web lint・型検査・本番build・単体4件。Chromium 11件PASS、短期限メール専用1件SKIP。 `.local/step2-invite-fix-*.log` |
 
 専用ローカル `mj-stats-step1` の既存migrationを使用した。今回のmigration追加はなく、元共有DB・既存管理QA・本番には適用していない。
+
+## Step 3の受入
+
+対象はPhase 2.5 / Step 3。専用ローカル `mj-stats-step1` のGo、PostgreSQL 17、Supabase Auth、Next.js本番モードとChromiumを使用した。移行は同じローカルクラスタ内の使い捨てDBでも実行した。以下は実行結果で、開発者による完了承認は保留。
+
+| 完了条件・Q | 実行結果 | 証跡 |
+| --- | --- | --- |
+| Q-01〜Q-03／ルール・分数 | PASS。標準ルール、トップ2人・3人・4人同点、負点、別の開始時総点120,000を実Goで計算。3人同点は各499/30pt、4位は−499/10pt。計算APIの書込み0件。保存・詳細・表示の分数が一致 | `.local/step3-auth.log`、`.local/step3-browser-final.json` |
+| Q-04/Q-05/Q-11/Q-12／入力境界、Go再計算 | PASS。人数不正、空・重複ID、不正JSON、素点省略・NULL・小数・100点単位違い・整数範囲外・合計不一致を拒否。0点を計算し、負点はブラウザから記録。クライアント指定のpoint/rank/recorded_byを拒否。ブラウザで不正素点を訂正し元の入力から保存 | `.local/step3-auth.log`、`.local/step3-browser-final.json` |
+| Q-13/Q-23／一括保存・再送 | PASS。結果4件目に故障を注入すると先に書いた3件と親対局・作成記録が残らない。同じ操作で再試行可。並行送信は201/200で同じID、内容変更は409。ブラウザではDB確定後の初回応答だけを切断し、再読込後に同じ本文とIDで200。対局1件・4結果・作成記録1件をDBで確認 | `.local/step3-auth.log`、`.local/step3-browser-final.json`、`.local/step3-migrations-{synthetic,actual}.log` |
+| Q-14/Q-15/Q-17／所属・ゲスト・本人・代理記録 | PASS。別リーグの参加者/ルール/シーズン/詳細を拒否。未認証・非所属の保存を拒否。所属memberが卓に参加せずに記録できる。同名ゲストは別々のIDで作成し、同じゲストIDを別対局へ再利用した。本人申請、memberの審査拒否、ownerの自己承認と却下、原IDを維持した表示名・本人IDの解決を確認。過去の同卓重複を拒否し、保存と承認が競合した場合は一方だけ成功 | `.local/step3-auth.log`、`.local/step3-browser-final.json` |
+| Q-16/Q-22/Q-23／ルール版・JST・所属競合 | PASS。利用停止と所属終了が先に確定すると、新規保存と再送が現在の認可・状態に従う。保存済みルールの利用停止後は有効所属の同じ操作だけ再送可。JSTの開始直前/開始ちょうど/終了日最終マイクロ秒/翌日境界、UTCや+09:00、未来・オフセットなし拒否、未指定フィルタを確認 | `.local/step3-auth.log` |
+| Q-25／移行・DB制約・権限 | PASS。空DB・合成データ・保存済み実コピー（5参加者、19対局、76結果）。全12本のスキーマ一致、旧ID・値・参照・帰属の保全、既約分数への換算とローカル再適用0件。DBで分母/既約性、4結果・素点合計・厳密なポイント合計・作成記録、ゲスト1リーグ、別リーグのINSERT、公開ロール権限を確認。旧POSTは410、旧GETの全件取得は400、旧INSERTは権限拒否 | `.local/step3-migrations-{synthetic,actual}.log`、`.local/step3-local-repeat.log`、`.local/step3-auth.log` |
+| Step 1・2回帰／Q-06〜Q-10、Q-14、Q-19、Q-21、Q-26の実施分 | PASS。認証、名前、セッション終了・削除、リーグ作成、招待・検索・参加、同じタブでの招待情報の復元、権限と所属限定履歴。Chromium 12件PASS・1件SKIP。試験用Goで招待照合の上限を調整し、429の動作は実Goの統合試験で確認。ブラウザで別リーグ・同じタブの別アカウントに下書き・再送を引き継がないことを確認 | `.local/step3-auth.log`、`.local/step3-browser-final.{log,json}` |
+| Go/Web/Postmanの契約 | PASS。Go全テスト・vet、Web lint・型検査・本番ビルド・単体4件。Postmanの32リクエストでYAMLとexportのメソッド/パス、Step 3のbody、環境変数・空の秘密値を照合 | `.local/step3-go-{test,vet}.log`、`.local/step3-web-{lint,types,build,unit}.log`、`.local/step3-postman.log` |
+
+通常Chromiumスイートの短期限メール専用設定、Safari・スマホ実機、Postman UI、管理QA・元共有DB・本番の適用と外部復旧演習は未実施。対象端末全体の表示・操作、ホームと共通ナビはStep 4。訂正・取消後の再送、本人紐付け解除、順位表はStep 5。実際の日時が不明な旧行のNULLと記録日時は隔離コピーで保全を確認した。旧行は通常履歴のブラウザ確認範囲から外れる。

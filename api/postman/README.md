@@ -1,12 +1,12 @@
 # MJ-Stats Postman
 
-ローカルのStep 2対応Goとmigrationを使用します。インポート対象は `export/MJ-Stats API v2.0.postman_collection.json` と `export/MJ-Stats.local.postman_environment.json` です。
+ローカルのStep 3対応Goとmigrationを使用します。インポート対象は `export/MJ-Stats API v2.0.postman_collection.json` と `export/MJ-Stats.local.postman_environment.json` です。
 
 1. `base_url` を専用ローカルGoに合わせ、同じローカルAuthの本人access tokenを `access_token` のローカル値へ設定します。
 2. Health → Get Me → 必要なら Set My Display Name → My Leagues の順で確認します。My Leaguesで返った有効所属のIDを `league_id` に指定します。
 3. League、Participants、Members、Rules、Seasons、Get Matchesで同じリーグを参照します。別リーグや存在しないUUIDは403。履歴で所属先にないseason UUIDは404です。
-4. 一覧は `limit` が既定20、1〜100。次ページは同じ本人・リーグ・一覧・filterの `next_cursor` を使用します。Rulesは `available=true/false/all`、履歴は `season=all/unassigned/UUID` に対応します。履歴のpointは保存済み数値です。
-5. History Without Leagueは400。旧計算・保存POSTは409で処理を停止します。Missing BearerとInvalid JWTは401です。
+4. 一覧は `limit` が既定20、1〜100。次ページは同じ本人・リーグ・一覧・filterの `next_cursor` を使用します。Rulesは `available=true/false/all`、履歴は `season=all/unassigned/UUID` に対応します。履歴のpointは `{"numerator":"499","denominator":"30"}` のような既約分数です。
+5. History Without Leagueは400。旧計算・保存POSTは410 `API_RETIRED`で処理を停止します。Missing BearerとInvalid JWTは401です。
 
 トークンを共有・exportへ含めません。実行範囲と証跡は [品質・受入](../../doc/quality-and-acceptance.md) を参照してください。
 
@@ -21,3 +21,13 @@
 コードやリンクは共有変数、保存済みレスポンス、共有履歴、exportに入れません。
 
 Search Leaguesは掲載名だけを検索し、Resolve League Numberは非掲載の番号も解決します。Preview Joinは所属を作らず、Join Leagueで明示的に参加します。隔離環境で確認するときだけ `invite_code` の空のsecret変数にローカル値を一時設定し、確認後に消去します。参加コードの形式不正は400、形式が正しいコードの不一致・期限切れ・失効は404です。試行制限は429とRetry-Afterです。
+
+
+## 対局記録とゲスト紐付け
+
+1. Create Guestで `client_request_id` を新しく設定し、ゲストを作成します。再参加時はParticipantsの既存IDを使います。
+2. Rulesの利用可能な `rule_id` と、Participantsから異なる4人の `player_1_id`〜`player_4_id` を設定し、Calculate League Matchを実行します。33,300 / 33,300 / 33,300 / 100点の例では、標準ルールで1位3人が各499/30ptです。
+3. Save League Matchの操作IDを新しくし、対局日時（オフセット付き）、必要なら同じリーグのシーズンUUIDを設定します。例の `null` は未指定です。応答の `id` を `match_id` に設定し、League Match DetailとGet Matchesを確認します。再送は同じ操作ID・同じ内容を送ります。
+4. 紐付けを申請する本人のBearerと `guest_user_id` でRequest Participant Linkを実行します。List Participant Linksで申請IDと版を取得します。運営者のBearerで `link_id`、`link_version`、新しい操作ID、確認内容を指定し、ApproveまたはReject Participant Linkを実行します。
+
+v1のコレクションは当時の契約の記録です。

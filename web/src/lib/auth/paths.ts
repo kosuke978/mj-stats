@@ -14,7 +14,7 @@ export function safeReturnTo(value: string | null | undefined): string {
     if (url.pathname !== value) return '/matches'
     if (url.origin !== 'https://app.invalid' || url.hash || url.search)
       return '/matches'
-    const leagueHistory = /^\/matches\/league\/[a-f0-9]{8}(?:-[a-f0-9]{4}){3}-[a-f0-9]{12}(?:\/invites)?$/i
+    const leagueHistory = /^\/matches\/league\/[a-f0-9]{8}(?:-[a-f0-9]{4}){3}-[a-f0-9]{12}(?:\/(?:invites|new|participant-links|[a-f0-9]{8}(?:-[a-f0-9]{4}){3}-[a-f0-9]{12}))?$/i
     const joinPage = /^\/join\/[0-9]{12}$/
     const pages = ['/matches', '/matches/new', '/account', '/leagues/new', '/leagues/search']
     return (pages.includes(url.pathname) || leagueHistory.test(url.pathname) || joinPage.test(url.pathname))

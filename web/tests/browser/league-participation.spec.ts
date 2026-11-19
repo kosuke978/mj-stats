@@ -74,8 +74,8 @@ test('Q-14/Q-19/Q-26: create, issue, join from three entrances, and scoped histo
       localSQL(`INSERT INTO public.matches(id,league_id,rule_id,recorded_by,match_date,data_origin)
         SELECT '${match}',l.id,r.id,l.owner_id,now(),'app' FROM public.leagues l
         JOIN public.rules r ON r.league_id=l.id WHERE l.id='${leagueID}';
-        INSERT INTO public.match_results(league_id,match_id,user_id,raw_score,final_point,rank)
-        SELECT id,'${match}',owner_id,31000,21.6,1 FROM public.leagues WHERE id='${leagueID}';`)
+        INSERT INTO public.match_results(league_id,match_id,user_id,raw_score,final_point,rank,final_point_numerator,final_point_denominator)
+        SELECT id,'${match}',owner_id,31000,21.6,1,108,5 FROM public.leagues WHERE id='${leagueID}';`)
     })
     const history = `/matches/league/${leagueID}`
     await a.getByRole('link', { name: '招待を管理' }).click()
@@ -147,15 +147,15 @@ test('Q-14/Q-19/Q-26: create, issue, join from three entrances, and scoped histo
       expect(localSQL(`SELECT count(*) FROM public.league_events WHERE league_id='${leagueID}' AND operation='league.join'`)).toBe('1')
       await b.unroute(join)
       await expect(b.getByText('31,000点', { exact: false })).toBeVisible()
-      await expect(b.getByText('対局の計算・記録は現在利用できません。')).toBeVisible()
+      await expect(b.getByRole('link', { name: '対局を入力' })).toBeVisible()
       await b.goto(history + '/invites')
       await expect(b.getByRole('main').getByRole('alert')).toHaveText('このリーグの招待は管理できません。')
     })
 
     const member = localSQL(`SELECT id FROM public.users WHERE auth_id='${guest.id}'`)
     if (!/^[0-9a-f-]{36}$/.test(member)) throw new Error('participant fixture UUID')
-    localSQL(`INSERT INTO public.match_results(league_id,match_id,user_id,raw_score,final_point,rank)
-      VALUES ('${leagueID}','${match}','${member}',29000,4.2,2);`)
+    localSQL(`INSERT INTO public.match_results(league_id,match_id,user_id,raw_score,final_point,rank,final_point_numerator,final_point_denominator)
+      VALUES ('${leagueID}','${match}','${member}',29000,4.2,2,21,5);`)
     const endMembership = (state: 'left' | 'removed') => localSQL(`UPDATE public.league_members
       SET status='${state}',ended_at=now(),version=version+1
       WHERE league_id='${leagueID}' AND user_id='${member}';`)

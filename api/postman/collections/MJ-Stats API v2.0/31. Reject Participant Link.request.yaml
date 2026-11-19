@@ -1,0 +1,16 @@
+$kind: http-request
+description: "owner/adminのみ。却下の場合も確認内容と版が必須。"
+url: "{{base_url}}/api/leagues/{{league_id}}/participant-links/{{link_id}}/reject"
+method: POST
+headers:
+  Authorization: "Bearer {{access_token}}"
+  Content-Type: application/json
+body:
+  type: json
+  content: |
+    {
+      "confirmation_note": "対局した本人であることを確認",
+      "version": "{{link_version}}",
+      "client_request_id": "{{client_request_id}}"
+    }
+order: 32000

@@ -102,7 +102,7 @@ try {
   )
   save(
     '.local/managed-web.env',
-    `NEXT_PUBLIC_API_URL=http://localhost:8081\nNEXT_PUBLIC_SUPABASE_URL=${url}\nNEXT_PUBLIC_SUPABASE_ANON_KEY=${anon}\nNEXT_PUBLIC_RULE_ID=99999999-9999-9999-9999-999999999999\nAPP_ORIGIN=http://localhost:3001\nAUTH_FLOW_SECRET=${randomBytes(32).toString('hex')}\n`,
+    `NEXT_PUBLIC_API_URL=http://localhost:8081\nNEXT_PUBLIC_SUPABASE_URL=${url}\nNEXT_PUBLIC_SUPABASE_ANON_KEY=${anon}\nAPP_ORIGIN=http://localhost:3001\nAUTH_FLOW_SECRET=${randomBytes(32).toString('hex')}\n`,
   )
   save(
     '.local/managed-acceptance.json',

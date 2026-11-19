@@ -1,0 +1,15 @@
+$kind: http-request
+description: "ゲストと所属を一括作成。同名でも別操作なら別ID。201、同じIDと名前で再送は200。"
+url: "{{base_url}}/api/leagues/{{league_id}}/guests"
+method: POST
+headers:
+  Authorization: "Bearer {{access_token}}"
+  Content-Type: application/json
+body:
+  type: json
+  content: |
+    {
+      "name": "Postmanゲスト",
+      "client_request_id": "{{client_request_id}}"
+    }
+order: 25000

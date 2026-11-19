@@ -1,7 +1,7 @@
 {
   "info": {
     "name": "MJ-Stats API v2.0",
-    "description": "Step 2のリーグ作成・参照、招待管理、検索・参加。旧対局計算・保存は停止中。",
+    "description": "Step 3のリーグ別ゲスト・計算・保存・詳細と、認証・所属・招待・履歴。",
     "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
   },
   "item": [
@@ -18,32 +18,22 @@
       "response": []
     },
     {
-      "name": "1. Calculate Match Points (409)",
+      "name": "1. Calculate Match Points (410)",
       "request": {
         "method": "POST",
-        "header": [
-          {
-            "key": "Content-Type",
-            "value": "application/json"
-          }
-        ],
+        "header": [],
         "url": "{{base_url}}/api/matches/calculate",
-        "description": "名前設定済みは409 RECORDING_UNAVAILABLE。未認証は401。計算・保存の副作用なし。"
+        "description": "名前設定済みは410 API_RETIRED。未認証は401。計算・保存の副作用なし。"
       },
       "response": []
     },
     {
-      "name": "2. Create Match (409)",
+      "name": "2. Create Match (410)",
       "request": {
         "method": "POST",
-        "header": [
-          {
-            "key": "Content-Type",
-            "value": "application/json"
-          }
-        ],
+        "header": [],
         "url": "{{base_url}}/api/matches",
-        "description": "名前設定済みは409 RECORDING_UNAVAILABLE。未認証は401。計算・保存の副作用なし。"
+        "description": "名前設定済みは410 API_RETIRED。未認証は401。計算・保存の副作用なし。"
       },
       "response": []
     },
@@ -58,7 +48,7 @@
           }
         ],
         "url": "{{base_url}}/api/leagues/{{league_id}}/matches?season=all&limit=20",
-        "description": "所属リーグの通常対局だけ。season: all/unassigned/UUID、status: all/valid/cancelled、limit: 1〜100、cursor: 同じ条件のnext_cursor。"
+        "description": "所属リーグの通常対局だけ。season: all/unassigned/UUID、status: all/valid/cancelled、limit: 1〜100、cursor: 同じ条件のnext_cursor。 pointは分子と分母が整数文字列の既約分数。"
       },
       "response": []
     },
@@ -229,7 +219,7 @@
         "method": "GET",
         "header": [],
         "url": "{{base_url}}/api/matches?league_id={{league_id}}&season=all&limit=20",
-        "description": "所属リーグの通常対局だけ。season: all/unassigned/UUID、status: all/valid/cancelled、limit: 1〜100、cursor: 同じ条件のnext_cursor。"
+        "description": "所属リーグの通常対局だけ。season: all/unassigned/UUID、status: all/valid/cancelled、limit: 1〜100、cursor: 同じ条件のnext_cursor。 pointは分子と分母が整数文字列の既約分数。"
       },
       "response": []
     },
@@ -388,6 +378,170 @@
         "body": {
           "mode": "raw",
           "raw": "{\n  \"code\": \"{{invite_code}}\",\n  \"client_request_id\": \"{{client_request_id}}\"\n}",
+          "options": {
+            "raw": {
+              "language": "json"
+            }
+          }
+        }
+      },
+      "response": []
+    },
+    {
+      "name": "24. Create Guest",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "url": "{{base_url}}/api/leagues/{{league_id}}/guests",
+        "description": "ゲストと所属を一括作成。同名でも別操作なら別ID。201、同じIDと名前で再送は200。",
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"name\": \"Postmanゲスト\",\n  \"client_request_id\": \"{{client_request_id}}\"\n}",
+          "options": {
+            "raw": {
+              "language": "json"
+            }
+          }
+        }
+      },
+      "response": []
+    },
+    {
+      "name": "25. Calculate League Match",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "url": "{{base_url}}/api/leagues/{{league_id}}/matches/calculate",
+        "description": "所属リーグの利用可能ルールと4人を指定。200。点数をDBへ保存せず正確なpointを返す。",
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"rule_id\": \"{{rule_id}}\",\n  \"players\": [\n    {\n      \"user_id\": \"{{player_1_id}}\",\n      \"raw_score\": 33300\n    },\n    {\n      \"user_id\": \"{{player_2_id}}\",\n      \"raw_score\": 33300\n    },\n    {\n      \"user_id\": \"{{player_3_id}}\",\n      \"raw_score\": 33300\n    },\n    {\n      \"user_id\": \"{{player_4_id}}\",\n      \"raw_score\": 100\n    }\n  ]\n}",
+          "options": {
+            "raw": {
+              "language": "json"
+            }
+          }
+        }
+      },
+      "response": []
+    },
+    {
+      "name": "26. Save League Match",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "url": "{{base_url}}/api/leagues/{{league_id}}/matches",
+        "description": "代理記録可。201、同じ操作IDと内容で再送は200、内容違いは409。標準ルール用の素点例。",
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"rule_id\": \"{{rule_id}}\",\n  \"players\": [\n    {\n      \"user_id\": \"{{player_1_id}}\",\n      \"raw_score\": 33300\n    },\n    {\n      \"user_id\": \"{{player_2_id}}\",\n      \"raw_score\": 33300\n    },\n    {\n      \"user_id\": \"{{player_3_id}}\",\n      \"raw_score\": 33300\n    },\n    {\n      \"user_id\": \"{{player_4_id}}\",\n      \"raw_score\": 100\n    }\n  ],\n  \"season_id\": null,\n  \"match_date\": \"2024-11-01T00:00:00+09:00\",\n  \"client_request_id\": \"{{client_request_id}}\"\n}",
+          "options": {
+            "raw": {
+              "language": "json"
+            }
+          }
+        }
+      },
+      "response": []
+    },
+    {
+      "name": "27. League Match Detail",
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": "{{base_url}}/api/leagues/{{league_id}}/matches/{{match_id}}",
+        "description": "200 Match。原user_id、canonical_user_id、rank、正確なpointを取得。別リーグの対局は404。"
+      },
+      "response": []
+    },
+    {
+      "name": "28. Request Participant Link",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "url": "{{base_url}}/api/leagues/{{league_id}}/participant-links",
+        "description": "登録本人がゲストとの紐付けに同意して申請。初回201、同じ操作の再送200。",
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"guest_user_id\": \"{{guest_user_id}}\",\n  \"client_request_id\": \"{{client_request_id}}\"\n}",
+          "options": {
+            "raw": {
+              "language": "json"
+            }
+          }
+        }
+      },
+      "response": []
+    },
+    {
+      "name": "29. List Participant Links",
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": "{{base_url}}/api/leagues/{{league_id}}/participant-links",
+        "description": "200 participant_links。memberは自分の申請、owner/adminは対象リーグの全申請。"
+      },
+      "response": []
+    },
+    {
+      "name": "30. Approve Participant Link",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "url": "{{base_url}}/api/leagues/{{league_id}}/participant-links/{{link_id}}/approve",
+        "description": "owner/adminのみ。本人の申請を自己承認可。同卓で同じ本人が重複するなら409。",
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"confirmation_note\": \"対局した本人であることを確認\",\n  \"version\": \"{{link_version}}\",\n  \"client_request_id\": \"{{client_request_id}}\"\n}",
+          "options": {
+            "raw": {
+              "language": "json"
+            }
+          }
+        }
+      },
+      "response": []
+    },
+    {
+      "name": "31. Reject Participant Link",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "url": "{{base_url}}/api/leagues/{{league_id}}/participant-links/{{link_id}}/reject",
+        "description": "owner/adminのみ。却下の場合も確認内容と版が必須。",
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"confirmation_note\": \"対局した本人であることを確認\",\n  \"version\": \"{{link_version}}\",\n  \"client_request_id\": \"{{client_request_id}}\"\n}",
           "options": {
             "raw": {
               "language": "json"

@@ -1,5 +1,5 @@
 $kind: http-request
-description: 名前設定済みは409 RECORDING_UNAVAILABLE。未認証は401。計算・保存の副作用なし。
+description: 名前設定済みは410 API_RETIRED。未認証は401。計算・保存の副作用なし。
 url: "{{base_url}}/api/matches"
 method: POST
 headers:

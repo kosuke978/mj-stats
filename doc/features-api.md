@@ -1,6 +1,29 @@
 # 実装済み機能とAPI契約
 
-Step 1は完了承認済み、2-1はPR #9でマージ済み。Draft PR #10で2-2〜2-7を実装した。実行結果は [Step 2総合受入](quality-and-acceptance.md#step-2の総合受入) を参照する。Step完了承認とPRマージは開発者判断。
+Step 2は [PR #10](https://github.com/kosuke978/mj-stats/pull/10) でマージ済み。Step 3で対局入力・ゲスト作成と本人紐付け・正確値の保存を追加した。各Stepの実行結果は [品質・受入](quality-and-acceptance.md) に記録する。
+
+## Step 3の対局入力・ゲストAPI
+
+次のパスは `/api/leagues/{league_id}` 配下。すべてGoが認証、初回表示名設定と対象リーグでの有効所属を確認する。
+
+| 操作 | 入力 | 応答 |
+| --- | --- | --- |
+| POST `/guests` | `{name,client_request_id}` | 初回201、同じ操作は200 `{participant}`。次の対局では参加者一覧の既存IDを使う |
+| POST `/matches/calculate` | `{rule_id,players:[{user_id,raw_score}×4]}` | 200 `{rule_id,results}`。保存時と同じ計算を実行 |
+| POST `/matches` | 計算の入力＋`{season_id?,match_date,client_request_id}` | 初回201、同じ操作は200、どちらも保存したMatchを返す |
+| GET `/matches/{match_id}` | パスの対局UUID | 200 Match。対象リーグに対局がなければ404 |
+| GET `/matches` | `season,status,cursor,limit` | 200 `{matches,next_cursor}`。対局詳細と同じMatch型 |
+| POST `/participant-links` | `{guest_user_id,client_request_id}` | 初回201、同じ操作は200 `{participant_link}`。申請操作が本人同意を記録する |
+| GET `/participant-links` | `cursor,limit` | 200 `{participant_links,next_cursor}`。memberは本人の申請、owner/adminは対象リーグの申請 |
+| POST `/participant-links/{id}/approve` と `/reject` | `{confirmation_note,version,client_request_id}` | 200 `{participant_link}`。owner/adminのみ。本人の申請を自己承認できる |
+
+Matchは `id,league_id,rule_id,season_id,match_date,created_at,recorded_by,status,version,results`。Resultは原IDの `user_id`、現在の本人対応を示す `canonical_user_id`、表示名の `display_name`、`raw_score,rank,point` を持つ。pointは `{"numerator":"499","denominator":"30"}` のように整数文字列の既約分数。未紐付けのcanonicalは原IDと同じ。履歴は原ID、保存済み順位、素点と分数を保持し、表示名には本人対応先の現在名を使う。通常リーグの記録だけが履歴対象。旧GETの移行アダプタは `league_id` 必須で同じ認可と型を使う。旧POSTの計算・保存は410 `API_RETIRED`。
+
+保存に含まれる記録者は認証済みの永続参加者IDで、対象リーグの所属登録者は代理記録できる。素点はDBの整数範囲内の100点単位で、0・負点可。人数、原IDと本人の重複、開始時総点、対象リーグ、利用可能なルールを検証する。本文の `point`、`rank`、`recorded_by` やその他の未知フィールドは400。新規日時は未来を拒否する。入力はオフセット付きRFC 3339で小数秒は最大6桁、応答はUTC。指定したシーズンではAsia/Tokyoの暦日で開始日・終了日を含める。省略と明示NULLはどちらも未指定。
+
+同じリーグ・記録者・操作IDの保存再送は正規化後の入力で照合する。UUIDの大小文字、同じ瞬間の時差表記、シーズン省略/NULLを揃え、参加者の配列順を保持する。内容違いは409 `IDEMPOTENCY_CONFLICT`。保存済みの再送は現在も有効な本人・所属を確認し、元ルールの利用停止後も同じ対局を返す。ゲスト・申請・審査は操作者と操作種別ごとに操作IDを記録し、対象リーグと内容も照合する。紐付けの状態は `pending/active/rejected`。承認・却下に確認内容1〜500文字と文字列の版を要求する。別人への上書き・既存同卓の本人重複は409。
+
+Webは `/matches/league/{league_id}` の履歴から `/new`、`/{match_id}`、`/participant-links` へつなぐ。DBの選択肢を取得し、ゲストを作って候補へ追加できる。タブ内の本人・リーグごとの下書きに、結果不明の保存本文と操作IDを保持する。再送完了後は詳細に進める。循環小数は小数4桁と省略記号で表示し、プレビュー・詳細で元の分数とIDを確認できる。
 
 ## 2-7のWeb接続
 
@@ -8,7 +31,7 @@ Step 1は完了承認済み、2-1はPR #9でマージ済み。Draft PR #10で2-2
 
 `/join/{group_number}` は参加リンクと手入力の共通画面。ブラウザがfragmentを読み、URLから直ちに取り除く。コードは対象番号とともに同じタブの `sessionStorage` に最長15分保持し、認証後は本人にも結び付ける。 `returnTo` は参加画面のパスだけ。ログイン・メール確認・初回表示名設定後もリンクを開いた同じタブでコードを復元する。別タブや期限超過などで復元できなければ、リンクの開き直し・手入力を案内する。プレビューと参加送信は別操作であり、ページ表示や認証復帰で参加を実行しない。参加成功後は対象リーグの履歴を再取得し、所属一覧へ戻れる。
 
-通信断などで結果不明の場合、同じ画面内の再試行では元の本文と操作IDを再利用する。参加用のコードは `returnTo`・クエリ・SSR・ログに含めず、照合時だけJSON本文で送る。参加完了、無効と判明したとき、ログアウト、本人・対象の切替時に保持内容を破棄する。試行制限では `Retry-After` と再試行の案内を表示する。失効・期限切れなどの無効招待は同じ案内で新しい招待を求める。記録停止は履歴と旧入力の案内を維持する。
+通信断などで結果不明の場合、同じ画面内の再試行では元の本文と操作IDを再利用する。参加用のコードは `returnTo`・クエリ・SSR・ログに含めず、照合時だけJSON本文で送る。参加完了、無効と判明したとき、ログアウト、本人・対象の切替時に保持内容を破棄する。試行制限では `Retry-After` と再試行の案内を表示する。失効・期限切れなどの無効招待は同じ案内で新しい招待を求める。当時は記録停止を履歴と旧入力画面で案内した。
 
 ## 2-6のリーグ検索・参加API
 
@@ -62,7 +85,7 @@ Step 1は完了承認済み、2-1はPR #9でマージ済み。Draft PR #10で2-2
 
 JWT・有効セッション・設定済み本人を確認し、その永続IDと指定リーグのactiveなregistered所属を照合する。存在しないUUIDと非所属は同じ403。構文不正なUUID・許可外、重複または空の一覧queryは400。ページは既定20、1〜100。参加者・所属は名前/ID、rule/seasonは作成日時（NULL末尾）/IDの昇順。cursorを本人・リーグ・一覧種類・絞り込みに結び付ける。ページングのcursorは認可の代わりにしない。
 
-### 2-3の履歴と停止中の旧経路
+### 2-3時点の履歴と停止中の旧経路
 
 - `GET /api/leagues/{league_id}/matches` は `{matches,next_cursor}`。行は `id,league_id,rule_id,season_id,recorded_by,match_date,created_at,results`、結果は `user_id,display_name,raw_score,rank,point`。pointはDBに保存済みのnumberで、正確値の分数型への切替はStep 3。
 - 日時はUTCまたはNULLのまま。通常対局には現DB制約で対局日時が必須。旧行への日時補完は行わず、通常履歴にも含めない。結果の並びは保存済み順位と原ID。本人対応ID、取消状態、版は未導入。
@@ -76,7 +99,7 @@ JWT・有効セッション・設定済み本人を確認し、その永続IDと
 
 ## Step 1〜2-2時点の仕様資料
 
-認証・本人情報の仕様は引き続き利用する。この節の固定選択肢、計算・保存、全件履歴は2-2までの旧対局経路の記録。現状は冒頭の2-3節を使う。
+認証・本人情報の仕様は引き続き利用する。この節の固定選択肢、計算・保存、全件履歴は2-2までの旧対局経路の記録。対局の現行契約は冒頭のStep 3節を使う。
 
 ### 画面と利用フロー（当時）
 

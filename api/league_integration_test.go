@@ -220,8 +220,8 @@ func testLeagueHistory(t *testing.T, ctx context.Context, admin *sql.DB, call ap
 			t.Errorf("cleanup legacy history fixture: %v", err)
 		}
 	})
-	insert(`INSERT INTO public.match_results(league_id,match_id,user_id,raw_score,final_point,rank)
-		VALUES($1,$2,$4,-100,-16.7,4),($1,$2,$5,35000,24.1,1),($3,$6,$7,29000,1.1,2)`,
+	insert(`INSERT INTO public.match_results(league_id,match_id,user_id,raw_score,final_point,rank,final_point_numerator,final_point_denominator)
+		VALUES($1,$2,$4,-100,-16.7,4,-167,10),($1,$2,$5,35000,24.1,1,241,10),($3,$6,$7,29000,1.1,2,11,10)`,
 		f.a, first, f.b, participant, f.guest, foreign, other)
 
 	path := "/api/leagues/" + f.a + "/matches"
@@ -289,7 +289,8 @@ func testLeagueHistory(t *testing.T, ctx context.Context, admin *sql.DB, call ap
 	if item["id"] != first || item["league_id"] != f.a || item["rule_id"] != f.rule || item["created_at"] != nil ||
 		item["match_date"] != "2026-10-31T15:00:00.000000Z" || result["user_id"] != participant ||
 		result["display_name"] != "履歴に表示する現在名" || result["rank"] != float64(4) ||
-		result["raw_score"] != float64(-100) || result["point"] != -16.7 {
+		result["raw_score"] != float64(-100) || result["canonical_user_id"] != participant ||
+		result["point"].(map[string]any)["numerator"] != "-167" || result["point"].(map[string]any)["denominator"] != "10" {
 		t.Fatal("history must preserve timestamps, original ID and stored score, rank and numeric points")
 	}
 	t.Log("Q-14/Q-16/Q-22/Q-26 PASS: two users, app-only scoped history, 403/404, season modes, cursor scope/ties, rename and original result values")

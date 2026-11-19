@@ -1,3 +1,5 @@
+import Link from "next/link"
+import { ResultList } from "@/components/matches/result-list"
 import { CalendarDays } from "lucide-react"
 import type { MatchHistory } from "@/types/match"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
@@ -12,7 +14,7 @@ const japanTime = new Intl.DateTimeFormat("ja-JP", {
   hourCycle: "h23",
 })
 
-export function MatchCard({ match }: { match: MatchHistory }) {
+export function MatchCard({ match, detailURL }: { match: MatchHistory; detailURL?: string }) {
   const date = match.match_date ?? match.created_at
   return (
     <Card>
@@ -27,16 +29,8 @@ export function MatchCard({ match }: { match: MatchHistory }) {
         </CardTitle>
       </CardHeader>
       <CardContent>
-        <ul className="space-y-2">
-          {match.results.map((player) => (
-            <li key={player.user_id} className="flex flex-wrap items-center justify-between gap-2 rounded-md border px-3 py-2 text-sm">
-              <span className="min-w-0 wrap-anywhere">{player.rank}位 {player.display_name}</span>
-              <span className="shrink-0 tabular-nums">
-                {player.raw_score.toLocaleString("ja-JP")}点 · {player.point > 0 ? "+" : ""}{player.point.toFixed(1)} pt
-              </span>
-            </li>
-          ))}
-        </ul>
+        <ResultList results={match.results} detailed={!detailURL} />
+        {detailURL && <Link className="mt-3 inline-block text-sm underline" href={detailURL} prefetch={false}>対局詳細</Link>}
       </CardContent>
     </Card>
   )

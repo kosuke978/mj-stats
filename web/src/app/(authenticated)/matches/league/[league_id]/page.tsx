@@ -83,10 +83,13 @@ export default async function LeagueHistoryPage({
       <header className="space-y-2">
         <Link href="/matches" prefetch={false} className="text-sm underline">リーグを切り替える</Link>
         <h1 className="text-2xl font-bold wrap-anywhere">{league.name}の対局履歴</h1>
-        {(league.my_role === 'owner' || league.my_role === 'admin') && (
-          <Link href={path + '/invites'} prefetch={false} className="text-sm underline">招待を管理</Link>
-        )}
-        <p className="text-sm text-muted-foreground">対局の計算・記録は現在利用できません。</p>
+        <nav aria-label="リーグ内の操作" className="flex flex-wrap items-center gap-3 text-sm">
+          <Link href={path + "/new"} prefetch={false} className={buttonVariants({ size: "sm" })}>対局を入力</Link>
+          <Link href={path + "/participant-links"} prefetch={false} className="underline">ゲストの本人紐付け</Link>
+          {league.my_role !== "member" && (
+            <Link href={path + "/invites"} prefetch={false} className="underline">招待を管理</Link>
+          )}
+        </nav>
       </header>
       <form action={path} method="get" className="flex flex-wrap items-end gap-2">
         <label className="grid min-w-0 gap-1 text-sm">
@@ -111,7 +114,7 @@ export default async function LeagueHistoryPage({
         <p className="rounded-lg border border-dashed p-4 text-sm">対象の対局はありません。</p>
       ) : (
         <section className="space-y-4" aria-label="対局一覧">
-          {history.matches.map((match) => <MatchCard key={match.id} match={match} />)}
+          {history.matches.map((match) => <MatchCard key={match.id} match={match} detailURL={`${path}/${match.id}`} />)}
         </section>
       )}
       {history.next_cursor && (
