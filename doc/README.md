@@ -2,7 +2,7 @@
 
 MJ-Statsは、サークルや麻雀コミュニティの対局を記録し、深い成績分析とSNSへの画像共有で楽しめるアプリを目指す。
 
-このフォルダは、プロダクトの方針、既存実装の仕様、開発・運用手順の入口。現在は **Phase 2.5 / Step 3「フォーム浄化・ゲスト永続化」**。Step 2はPR #10でマージ済み。Step 3の実装と検証の記録を、開発者による完了承認と区別する。工程は [ロードマップ](product-roadmap.md)、検証は [品質文書](quality-and-acceptance.md) を参照する。リポジトリの入口は [ルートREADME](../README.md)、AI向けの入口は [AGENTS.md](../AGENTS.md)。
+このフォルダは、プロダクトの方針、既存実装の仕様、開発・運用手順の入口。現在は **Phase 2.5 / Step 4「ホーム・導線」**。Step 2とStep 3はそれぞれPR #10と#11でマージ済み。工程は [ロードマップ](product-roadmap.md)、検証は [品質文書](quality-and-acceptance.md) を参照する。リポジトリの入口は [ルートREADME](../README.md)、AI向けの入口は [AGENTS.md](../AGENTS.md)。
 
 ## 文書の構成
 

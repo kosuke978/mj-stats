@@ -4,8 +4,6 @@ import { clientAPI } from '@/lib/auth/client-api'
 import { type Viewer } from '@/lib/auth/api'
 import { normalizeName } from '@/lib/auth/name'
 import { safeReturnTo } from '@/lib/auth/paths'
-import { discardInviteOnLogout } from '@/lib/auth/pending-invite'
-import { browserSupabase } from '@/lib/supabase/browser'
 import { useViewer } from './viewer-provider'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -13,12 +11,12 @@ import { Label } from '@/components/ui/label'
 
 export function ProfileForm({
   setup = false,
-  returnTo = '/matches',
+  returnTo = '/',
 }: {
   setup?: boolean
   returnTo?: string
 }) {
-  const { viewer, setViewer } = useViewer()
+  const { viewer, setViewer, subject, signOut } = useViewer()
   const [name, setName] = useState(setup ? '' : viewer.name)
   const [busy, setBusy] = useState(false)
   const [message, setMessage] = useState('')
@@ -37,7 +35,7 @@ export function ProfileForm({
       const updated = await clientAPI<Viewer>('/api/users/me', {
         method: 'PATCH',
         body: JSON.stringify({ name: normalized }),
-      })
+      }, subject)
       setViewer(updated)
       setName(updated.name)
       if (setup) window.location.replace(safeReturnTo(returnTo))
@@ -56,13 +54,7 @@ export function ProfileForm({
     setBusy(true)
     setMessage('')
     try {
-      const { error } = await browserSupabase().auth.signOut({ scope: 'local' })
-      if (error) {
-        setMessage('ログアウトを完了できませんでした。再試行してください。')
-        return
-      }
-      discardInviteOnLogout()
-      window.location.replace('/login')
+      await signOut()
     } catch {
       setMessage('ログアウトを完了できませんでした。再試行してください。')
     } finally {

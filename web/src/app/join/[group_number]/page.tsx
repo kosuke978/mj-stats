@@ -1,4 +1,4 @@
-import Link from 'next/link'
+import { AppLink } from '@/components/navigation/app-link'
 import { notFound } from 'next/navigation'
 import { ViewerProvider } from '@/components/auth/viewer-provider'
 import { InviteHandoff, JoinLeague } from '@/components/leagues/join-league'
@@ -30,7 +30,7 @@ export default async function JoinPage({ params }: { params: Promise<{ group_num
     return (
       <ViewerProvider key={current.viewer.id} initial={current.viewer} subject={current.subject}>
         <main className="mx-auto w-full max-w-lg space-y-4 px-4 py-6">
-          <Link href="/leagues/search" className="text-sm underline">リーグを探す</Link>
+          <AppLink href="/leagues/search" className="text-sm underline">リーグを探す</AppLink>
           {heading}
           <p className="text-sm text-muted-foreground">コードが表示されない場合は、招待リンクを開き直すか、受け取ったコードを入力してください。</p>
           <JoinLeague key={number} groupNumber={number} />
@@ -52,11 +52,11 @@ export default async function JoinPage({ params }: { params: Promise<{ group_num
           <InviteHandoff groupNumber={number} subject={current?.subject ?? null}>
             <div className="flex flex-wrap gap-4 underline">
               {current ? (
-                <Link href={`/profile/setup?${query}`} prefetch={false}>表示名を設定</Link>
+                <AppLink href={`/profile/setup?${query}`}>表示名を設定</AppLink>
               ) : (
                 <>
-                  <Link href={loginPath(path)} prefetch={false}>ログイン</Link>
-                  <Link href={`/signup?${query}`} prefetch={false}>新規登録</Link>
+                  <AppLink href={loginPath(path)}>ログイン</AppLink>
+                  <AppLink href={`/signup?${query}`}>新規登録</AppLink>
                 </>
               )}
             </div>

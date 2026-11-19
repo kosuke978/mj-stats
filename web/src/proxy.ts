@@ -5,6 +5,7 @@ import { authFetch } from '@/lib/supabase/fetch'
 
 export async function proxy(request: NextRequest) {
   const path = request.nextUrl.pathname
+  const returnTo = safeReturnTo(path)
   const headers = new Headers(request.headers)
   headers.set('x-mjstats-path', path)
   let response = NextResponse.next({ request: { headers } })
@@ -34,10 +35,10 @@ export async function proxy(request: NextRequest) {
     error,
   } = await supabase.auth.getUser()
   const protectedPage =
+    path === '/' ||
     path === '/account' ||
-    path.startsWith('/matches') ||
-    path === '/leagues/new' ||
-    path === '/leagues/search' ||
+    path === '/matches' || path.startsWith('/matches/') ||
+    path.startsWith('/leagues/') ||
     path === '/profile/setup' ||
     path === '/password/update'
   if (
@@ -59,7 +60,7 @@ export async function proxy(request: NextRequest) {
   }
   if (protectedPage && !user) {
     const redirected = NextResponse.redirect(
-      new URL(loginPath(safeReturnTo(path)), process.env.APP_ORIGIN!),
+      new URL(loginPath(returnTo), process.env.APP_ORIGIN!),
     )
     response.cookies
       .getAll()

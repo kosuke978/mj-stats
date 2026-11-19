@@ -1,24 +1,17 @@
 "use client"
 
-import Link from "next/link"
-import { useRef, useState, useSyncExternalStore } from "react"
+import { AppLink } from "@/components/navigation/app-link"
+import { useEffect, useRef, useState, useSyncExternalStore } from "react"
 import { useViewer } from "@/components/auth/viewer-provider"
 import { leagueMessage, useLeagueAction } from "@/components/leagues/league-api"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { APIError } from "@/lib/auth/api"
 import { clientAPI } from "@/lib/auth/client-api"
-import type { MatchHistory, MatchHistoryResult, MatchRule, MatchSaveInput, MatchScores, Participant, Season } from "@/types/match"
+import { deleteMatchDraft, draftLifetime, matchDraftKey, readMatchDraft, writeMatchDraft, type MatchDraft } from "@/lib/leagues/match-drafts"
+import type { MatchHistory, MatchHistoryResult, MatchRule, MatchScores, Participant, Season } from "@/types/match"
 import { participantLabel } from "./participant-label"
 import { ResultList } from "./result-list"
-
-type Draft = {
-  rule: string
-  season: string
-  date: string
-  players: { id: string; score: string }[]
-  pending: MatchSaveInput | null
-}
 
 type ReferenceData = {
   leagueID: string
@@ -39,12 +32,12 @@ const selectStyle = "h-10 w-full min-w-0 rounded-md border bg-background px-2"
 export function MatchEntry(props: ReferenceData) {
   const { viewer, subject } = useViewer()
   const mounted = useSyncExternalStore(subscribe, clientMounted, serverMounted)
-  const storageKey = `mjstats.match-entry.v1:${subject}:${viewer.id}:${props.leagueID}`
+  const storageKey = matchDraftKey(subject, viewer.id, props.leagueID)
   if (!mounted) return <p role="status">入力画面を読み込んでいます…</p>
   return <EntryForm key={storageKey} storageKey={storageKey} subject={subject} {...props} />
 }
 
-function newDraft(rules: MatchRule[]): Draft {
+function newDraft(rules: MatchRule[]): MatchDraft {
   const time = new Date(Date.now() + 9 * 60 * 60 * 1000)
   return {
     rule: rules.length === 1 ? rules[0].id : "",
@@ -55,25 +48,13 @@ function newDraft(rules: MatchRule[]): Draft {
   }
 }
 
-function readDraft(key: string, rules: MatchRule[]): Draft {
-  try {
-    const stored = window.sessionStorage.getItem(key)
-    if (stored) {
-      const draft = JSON.parse(stored) as Draft
-      if (draft.players.length === 4) return draft
-    }
-  } catch {
-    // The current form remains available if browser storage is disabled.
-  }
-  return newDraft(rules)
-}
-
 function EntryForm({ leagueID, participants: initial, rules, seasons, storageKey, subject }: ReferenceData & {
   storageKey: string
   subject: string
 }) {
   const [participants, setParticipants] = useState(initial)
-  const [draft, setDraft] = useState(() => readDraft(storageKey, rules))
+  const [stored, setStored] = useState(() => readMatchDraft(storageKey) ?? { draft: newDraft(rules), expiresAt: 0 })
+  const { draft, expiresAt } = stored
   const [guestName, setGuestName] = useState("")
   const [guestNotice, setGuestNotice] = useState("")
   const [preview, setPreview] = useState<{ scores: MatchScores; results: MatchHistoryResult[] } | null>(null)
@@ -85,21 +66,35 @@ function EntryForm({ leagueID, participants: initial, rules, seasons, storageKey
   const base = `/api/leagues/${leagueID}`
   const history = `/matches/league/${leagueID}`
   const rule = rules.find((r) => r.id === draft.rule)
+  const [matchDay, matchTime] = draft.date.split("T")
   const expectedTotal = rule ? rule.default_points * 4 : null
   const total = draft.players.reduce((sum, p) => sum + (Number(p.score) || 0), 0)
   const locked = busy || draft.pending !== null
 
-  function store(next: Draft) {
-    setDraft(next)
-    try {
-      window.sessionStorage.setItem(storageKey, JSON.stringify(next))
-    } catch {
-      // The retry snapshot is also kept in memory for this page.
+  useEffect(() => {
+    if (!expiresAt) return
+    function expire() {
+      if (Date.now() < expiresAt) return
+      deleteMatchDraft(storageKey)
+      setStored({ draft: newDraft(rules), expiresAt: 0 })
+      setPreview(null)
+      setMessage("24時間が経過したため、下書きを削除しました。")
     }
+    const timer = window.setTimeout(expire, Math.max(0, expiresAt - Date.now()))
+    document.addEventListener("visibilitychange", expire)
+    return () => {
+      window.clearTimeout(timer)
+      document.removeEventListener("visibilitychange", expire)
+    }
+  }, [expiresAt, rules, storageKey])
+
+  function store(next: MatchDraft, expiry: number) {
+    setStored({ draft: next, expiresAt: expiry })
+    writeMatchDraft(storageKey, subject, { draft: next, expiresAt: expiry })
   }
 
-  function edit(fields: Partial<Draft>) {
-    store({ ...draft, ...fields })
+  function edit(fields: Partial<MatchDraft>) {
+    store({ ...draft, ...fields }, Date.now() + draftLifetime)
     setPreview(null)
     setMessage("")
   }
@@ -120,7 +115,7 @@ function EntryForm({ leagueID, participants: initial, rules, seasons, storageKey
   }
 
   async function calculate() {
-    if (running.current || draft.pending) return
+    if (running.current || draft.pending || (expiresAt && Date.now() >= expiresAt)) return
     setPreview(null)
     const chosen = draft.players.map((p) => p.id)
     if (!draft.rule || chosen.some((id) => !id) || new Set(chosen).size !== 4) {
@@ -145,7 +140,7 @@ function EntryForm({ leagueID, participants: initial, rules, seasons, storageKey
       const value = await clientAPI<{ results: MatchHistoryResult[] }>(`${base}/matches/calculate`, {
         method: "POST", body: JSON.stringify(scores), signal: AbortSignal.timeout(15000),
       }, subject)
-      setPreview({ scores, results: value.results })
+      if (Date.now() < expiresAt) setPreview({ scores, results: value.results })
     } catch (error) {
       setMessage(leagueMessage(error))
     } finally {
@@ -155,11 +150,11 @@ function EntryForm({ leagueID, participants: initial, rules, seasons, storageKey
   }
 
   async function save() {
-    if (running.current) return
+    if (running.current || (expiresAt && Date.now() >= expiresAt)) return
     let input = draft.pending
     if (!input) {
       if (!preview) return
-      if (!draft.date) {
+      if (!matchDay || !matchTime) {
         setMessage("日本時間で対局日時を入力してください。")
         return
       }
@@ -172,19 +167,21 @@ function EntryForm({ leagueID, participants: initial, rules, seasons, storageKey
     running.current = true
     setBusy(true)
     setMessage("")
-    store({ ...draft, pending: input })
+    const expiry = draft.pending ? expiresAt : Date.now() + draftLifetime
+    if (!draft.pending) store({ ...draft, pending: input }, expiry)
     try {
       const value = await clientAPI<MatchHistory>(`${base}/matches`, {
         method: "POST", body: JSON.stringify(input), signal: AbortSignal.timeout(15000),
       }, subject)
-      store(newDraft(rules))
-      try { window.sessionStorage.removeItem(storageKey) } catch {}
+      deleteMatchDraft(storageKey)
+      setStored({ draft: newDraft(rules), expiresAt: 0 })
       setPreview(null)
       setSaved(value)
     } catch (error) {
+      if (Date.now() >= expiry) return
       const rejected = error instanceof APIError && rejectedSaveCodes.has(error.code)
       if (rejected) {
-        store({ ...draft, pending: null })
+        store({ ...draft, pending: null }, expiry)
         setMessage(leagueMessage(error))
       } else {
         setMessage("保存結果を確認できません。同じ内容で再送してください。")
@@ -199,7 +196,8 @@ function EntryForm({ leagueID, participants: initial, rules, seasons, storageKey
     <section className="space-y-4 rounded-lg border p-4">
       <p role="status">対局を保存しました。</p>
       <div className="flex flex-wrap items-center gap-4">
-        <Link className="underline" href={`${history}/${saved.id}`} prefetch={false}>保存した対局を見る</Link>
+        <AppLink className="underline" href={`${history}/${saved.id}`}>保存した対局を見る</AppLink>
+        <AppLink className="underline" href={history}>対局履歴を見る</AppLink>
         <Button variant="outline" onClick={() => setSaved(null)}>次の対局を入力</Button>
       </div>
     </section>
@@ -207,17 +205,21 @@ function EntryForm({ leagueID, participants: initial, rules, seasons, storageKey
 
   return (
     <div className="space-y-5">
-      <fieldset disabled={locked} className="grid gap-3 rounded-lg border p-4 sm:grid-cols-2">
+      <fieldset disabled={locked} className="grid min-w-0 grid-cols-1 gap-3 rounded-lg border px-[min(1rem,4vw)] py-4 sm:grid-cols-2">
         <legend className="px-1 font-medium">対局の条件</legend>
-        <label className="grid gap-1 text-sm">
+        <label className="grid min-w-0 gap-1 text-sm">
           ルール
           <select className={selectStyle} value={draft.rule} onChange={(e) => edit({ rule: e.target.value })}>
             <option value="">ルールを選択</option>
             {draft.rule && !rule && <option value={draft.rule}>利用できないルール</option>}
-            {rules.map((r) => <option key={r.id} value={r.id}>{r.name} · {r.default_points.toLocaleString("ja-JP")}点持ち · {r.id.slice(0, 8)}</option>)}
+            {rules.map((r) => (
+              <option key={r.id} value={r.id}>
+                {r.name}{rules.some((other) => other.id !== r.id && other.name === r.name) && ` (${r.id.slice(0, 8)})`}
+              </option>
+            ))}
           </select>
         </label>
-        <label className="grid gap-1 text-sm">
+        <label className="grid min-w-0 gap-1 text-sm">
           シーズン
           <select className={selectStyle} value={draft.season} onChange={(e) => edit({ season: e.target.value })}>
             <option value="">未指定</option>
@@ -225,17 +227,21 @@ function EntryForm({ leagueID, participants: initial, rules, seasons, storageKey
             {seasons.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
           </select>
         </label>
-        <label className="grid gap-1 text-sm">
-          対局日時（日本時間）
-          <Input type="datetime-local" value={draft.date} onChange={(e) => edit({ date: e.target.value })} />
+        <label className="grid min-w-0 gap-1 text-sm">
+          対局日（日本時間）
+          <Input type="date" className="min-w-0 px-2" value={matchDay} onChange={(e) => edit({ date: `${e.target.value}T${matchTime}` })} />
+        </label>
+        <label className="grid min-w-0 gap-1 text-sm">
+          開始時刻（日本時間）
+          <Input type="time" className="min-w-0 px-2" value={matchTime} onChange={(e) => edit({ date: `${matchDay}T${e.target.value}` })} />
         </label>
       </fieldset>
-      <fieldset disabled={locked} className="space-y-3 rounded-lg border p-4">
+      <fieldset disabled={locked} className="@container min-w-0 space-y-3 rounded-lg border px-[min(1rem,4vw)] py-4">
         <legend className="px-1 font-medium">参加者と素点</legend>
         <p className="text-sm text-muted-foreground">100点単位で入力してください。負点も入力できます。</p>
         {draft.players.map((player, index) => (
-          <div key={index} className="grid grid-cols-[minmax(0,1fr)_minmax(0,7rem)] gap-2">
-            <label className="grid gap-1 text-sm">
+          <div key={index} className="grid grid-cols-1 gap-2 @min-[16rem]:grid-cols-[minmax(0,1fr)_minmax(0,7rem)]">
+            <label className="grid min-w-0 gap-1 text-sm">
               参加者 {index + 1}
               <select className={selectStyle} value={player.id} onChange={(e) => editPlayer(index, { id: e.target.value })}>
                 <option value="">参加者を選択</option>
@@ -243,9 +249,9 @@ function EntryForm({ leagueID, participants: initial, rules, seasons, storageKey
                 {participants.map((p) => <option key={p.id} value={p.id}>{participantLabel(p, participants)}</option>)}
               </select>
             </label>
-            <label className="grid gap-1 text-sm">
+            <label className="grid min-w-0 gap-1 text-sm">
               素点 {index + 1}
-              <Input inputMode="decimal" value={player.score} onChange={(e) => editPlayer(index, { score: e.target.value })} />
+              <Input inputMode="decimal" className="min-w-0" value={player.score} onChange={(e) => editPlayer(index, { score: e.target.value })} />
             </label>
           </div>
         ))}
@@ -254,7 +260,7 @@ function EntryForm({ leagueID, participants: initial, rules, seasons, storageKey
           <summary className="cursor-pointer font-medium">ゲストを追加</summary>
           <p className="mt-2 text-muted-foreground">再参加のゲストは、参加者欄にある既存の候補を選んでください。複数のリーグで継続して参加する場合は、本人のアカウントで各リーグに参加できます。</p>
           <div className="mt-2 flex flex-wrap items-end gap-2">
-            <label className="grid flex-1 gap-1">
+            <label className="grid min-w-0 flex-1 basis-36 gap-1">
               ゲスト名
               <Input value={guestName} onChange={(e) => {
                 setGuestName(e.target.value)

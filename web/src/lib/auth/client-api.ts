@@ -1,7 +1,7 @@
 'use client'
 import { browserSupabase } from '@/lib/supabase/browser'
 import { APIError, apiResponse, tokenFetch } from './api'
-import { loginPath } from './paths'
+import { loginPath, safeReturnTo } from './paths'
 
 export async function clientAPI<T>(
   path: string,
@@ -39,7 +39,7 @@ export async function clientAPI<T>(
     )
       throw new Error('認証を更新できません。再試行してください')
     if (session && session.user.id !== originalSubject) {
-      window.location.replace(loginPath(window.location.pathname))
+      window.location.reload()
       throw new APIError(
         401,
         'UNAUTHENTICATED',
@@ -49,7 +49,10 @@ export async function clientAPI<T>(
     if (session && !error)
       response = await tokenFetch(path, session.access_token, init)
     if (!session || error || response.status === 401) {
-      window.location.replace(loginPath(window.location.pathname))
+      const next = safeReturnTo(window.location.pathname)
+      window.location.replace(session && !error
+        ? `/auth/refresh?returnTo=${encodeURIComponent(next)}`
+        : loginPath(next))
       throw new APIError(401, 'UNAUTHENTICATED', 'ログインし直してください')
     }
   }
@@ -63,7 +66,7 @@ export async function clientAPI<T>(
       data?.error?.code === 'PROFILE_REQUIRED'
     ) {
       window.location.replace(
-        `/profile/setup?returnTo=${encodeURIComponent(window.location.pathname)}`,
+        `/profile/setup?returnTo=${encodeURIComponent(safeReturnTo(window.location.pathname))}`,
       )
     }
   }

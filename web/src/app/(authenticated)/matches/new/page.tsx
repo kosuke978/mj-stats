@@ -1,11 +1,13 @@
-import Link from "next/link"
+import { Suspense } from 'react'
+import { LeagueDirectory, LeagueDirectoryLoading } from '@/components/navigation/league-directory'
 
-export default function NewMatchPage() {
+export default function LegacyPage() {
   return (
-    <main className="mx-auto w-full max-w-xl space-y-4 px-4 py-6">
-      <h1 className="text-2xl font-bold tracking-tight">対局記録</h1>
-      <p>所属リーグの履歴から対局を入力できます。</p>
-      <Link href="/matches" prefetch={false} className="underline">所属リーグを選ぶ</Link>
+    <main className="mx-auto w-full max-w-2xl space-y-5 px-4 py-6">
+      <h1 className="text-2xl font-bold">対局入力のリーグを選択</h1>
+      <Suspense fallback={<LeagueDirectoryLoading />}>
+        <LeagueDirectory path="/matches/new" />
+      </Suspense>
     </main>
   )
 }

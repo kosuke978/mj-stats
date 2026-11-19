@@ -68,7 +68,7 @@ test('Q-14/Q-19/Q-26: create, issue, join from three entrances, and scoped histo
       await a.getByRole('link', { name: 'リーグを作成' }).click()
       await a.getByLabel('リーグ名').fill(label)
       await a.getByRole('button', { name: 'リーグを作成' }).click()
-      await expect(a.getByRole('heading', { name: `${label}の対局履歴` })).toBeVisible()
+      await expect(a.getByRole('heading', { name: label })).toBeVisible()
       leagueID = new URL(a.url()).pathname.split('/').at(-1) ?? ''
       if (!/^[0-9a-f-]{36}$/.test(leagueID)) throw new Error('created league UUID')
       localSQL(`INSERT INTO public.matches(id,league_id,rule_id,recorded_by,match_date,data_origin)
@@ -77,6 +77,7 @@ test('Q-14/Q-19/Q-26: create, issue, join from three entrances, and scoped histo
         INSERT INTO public.match_results(league_id,match_id,user_id,raw_score,final_point,rank,final_point_numerator,final_point_denominator)
         SELECT id,'${match}',owner_id,31000,21.6,1,108,5 FROM public.leagues WHERE id='${leagueID}';`)
     })
+    const leagueHome = `/leagues/${leagueID}`
     const history = `/matches/league/${leagueID}`
     await a.getByRole('link', { name: '招待を管理' }).click()
     await a.getByRole('button', { name: '現行の招待を取得' }).click()
@@ -141,7 +142,8 @@ test('Q-14/Q-19/Q-26: create, issue, join from three entrances, and scoped histo
       await expect(b.getByRole('main').getByRole('alert')).toContainText('送信結果を確認できませんでした')
       expect(accepted).toBeTruthy()
       await b.getByRole('button', { name: '参加を再試行' }).click()
-      await expect(b).toHaveURL(history)
+      await expect(b).toHaveURL(leagueHome)
+      await b.getByRole('link', { name: '対局履歴', exact: true }).click()
       expect(await pendingCleared()).toBeTruthy()
       expect(operationIDs.length === 2 && operationIDs[0] === operationIDs[1]).toBeTruthy()
       expect(localSQL(`SELECT count(*) FROM public.league_events WHERE league_id='${leagueID}' AND operation='league.join'`)).toBe('1')
@@ -165,7 +167,8 @@ test('Q-14/Q-19/Q-26: create, issue, join from three entrances, and scoped histo
     }
     async function joinFromPreview() {
       await b.getByRole('button', { name: 'このリーグに参加' }).click()
-      await expect(b).toHaveURL(history)
+      await expect(b).toHaveURL(leagueHome)
+      await b.getByRole('link', { name: '対局履歴', exact: true }).click()
       await expect(b.getByText('29,000点', { exact: false })).toBeVisible()
     }
 
@@ -173,9 +176,9 @@ test('Q-14/Q-19/Q-26: create, issue, join from three entrances, and scoped histo
       endMembership('left')
       await b.goto(history)
       await expect(b.getByRole('main').getByRole('alert')).toHaveText('このリーグは閲覧できません。')
-      await b.goto('/matches')
+      await b.goto('/')
       await expect(b.getByText('所属しているリーグがありません。')).toBeVisible()
-      await b.getByRole('link', { name: 'リーグに参加' }).click()
+      await b.getByRole('link', { name: '名前・番号から参加' }).click()
       const search = b.getByLabel('公開されているリーグ名')
       await search.fill(label)
       await b.getByRole('button', { name: '名前で検索' }).click()

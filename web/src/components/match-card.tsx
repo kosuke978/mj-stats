@@ -1,4 +1,4 @@
-import Link from "next/link"
+import { AppLink } from "@/components/navigation/app-link"
 import { ResultList } from "@/components/matches/result-list"
 import { CalendarDays } from "lucide-react"
 import type { MatchHistory } from "@/types/match"
@@ -22,7 +22,7 @@ export function MatchCard({ match, detailURL }: { match: MatchHistory; detailURL
         <CardTitle className="flex items-center gap-2 text-sm text-muted-foreground">
           <CalendarDays className="h-4 w-4 shrink-0" aria-hidden />
           {date ? (
-            <time dateTime={date}>
+            <time className="min-w-0 wrap-anywhere" dateTime={date}>
               {match.match_date ? "対局日時" : "記録日時"} {japanTime.format(new Date(date))}
             </time>
           ) : "日時不明"}
@@ -30,7 +30,7 @@ export function MatchCard({ match, detailURL }: { match: MatchHistory; detailURL
       </CardHeader>
       <CardContent>
         <ResultList results={match.results} detailed={!detailURL} />
-        {detailURL && <Link className="mt-3 inline-block text-sm underline" href={detailURL} prefetch={false}>対局詳細</Link>}
+        {detailURL && <AppLink className="mt-3 inline-block text-sm underline" href={detailURL}>対局詳細</AppLink>}
       </CardContent>
     </Card>
   )

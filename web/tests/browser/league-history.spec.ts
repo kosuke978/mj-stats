@@ -1,6 +1,7 @@
 import { test, expect, type Page } from '@playwright/test'
 import { readFileSync } from 'node:fs'
-import { execFileSync } from 'node:child_process'
+import { execFileSync, spawn } from 'node:child_process'
+import { once } from 'node:events'
 import { randomInt, randomUUID } from 'node:crypto'
 
 const container = 'supabase_db_mj-stats-step1'
@@ -12,7 +13,7 @@ function localSQL(input: string) {
   })
 }
 
-test('Q-14/Q-26: scoped SSR history, league and user switching, and the league entry link', async ({ page, request }) => {
+test('Q-14/Q-19/Q-26: scoped history, home states and legacy selection', async ({ page, request, browserName }, testInfo) => {
   const config = JSON.parse(readFileSync('../.local/acceptance.json', 'utf8'))
   expect(config.API_URL).toBe('http://127.0.0.1:55421')
   const info = JSON.parse(execFileSync('docker', ['inspect', container], { encoding: 'utf8' }))[0]
@@ -92,9 +93,27 @@ test('Q-14/Q-26: scoped SSR history, league and user switching, and the league e
     await page.getByRole('button', { name: '表示する' }).click()
     await expect(page).toHaveURL(`${pathA}?season=${season}`)
     await expect(page.getByText('33,000点', { exact: false })).toHaveCount(1)
-    await page.getByRole('link', { name: 'リーグを切り替える' }).click()
+    const unselected = await page.context().newPage()
+    try {
+      await unselected.goto('/matches/new')
+      await expect(unselected.getByRole('heading', { name: '対局入力のリーグを選択' })).toBeVisible()
+      await expect(unselected.getByRole('link', { name: 'ブラウザリーグA オーナー' })).toHaveAttribute('href', pathA + '/new')
+      await expect(unselected.getByRole('link', { name: 'ブラウザリーグB メンバー' })).toHaveAttribute('href', pathB + '/new')
+      await unselected.goto('/matches')
+      await expect(unselected.getByRole('heading', { name: '対局履歴のリーグを選択' })).toBeVisible()
+      await unselected.getByRole('link', { name: 'ブラウザリーグA オーナー' }).click()
+      await expect(unselected).toHaveURL(pathA)
+      await expect(unselected.getByText('33,000点', { exact: false })).toBeVisible()
+    } finally {
+      await unselected.close()
+    }
+    await page.goto('/matches/new')
+    await expect(page).toHaveURL(pathA + '/new')
+    await page.getByRole('link', { name: 'ホーム', exact: true }).click()
     await expect(page.getByRole('link', { name: 'ブラウザリーグA オーナー' })).toBeVisible()
     await page.getByRole('link', { name: 'ブラウザリーグB メンバー' }).click()
+    await expect(page).toHaveURL(`/leagues/${leagueB}`)
+    await page.getByRole('link', { name: '対局履歴', exact: true }).click()
     await expect(page).toHaveURL(pathB)
     await expect(page.getByText('対象の対局はありません。')).toBeVisible()
     await expect(page.getByText('履歴の参加者A', { exact: false }).filter({ hasText: '1位' })).toHaveCount(0)
@@ -109,6 +128,47 @@ test('Q-14/Q-26: scoped SSR history, league and user switching, and the league e
     }
     await page.getByRole('link', { name: '履歴を読み直す' }).click()
     await expect(page.getByText('対象の対局はありません。')).toBeVisible()
+    await expect(page.getByRole('link', { name: '対局を記録する' })).toHaveAttribute('href', pathB + '/new')
+    await page.goto('/matches')
+    await expect(page).toHaveURL(pathB)
+
+    const connection = spawn('docker', ['exec', '-i', container, 'psql', '-X', '-qAt',
+      '-U', 'postgres', '-d', 'postgres', '-v', 'ON_ERROR_STOP=1'], { stdio: ['pipe', 'pipe', 'pipe'] })
+    const closed = once(connection, 'close')
+    try {
+      const locked = once(connection.stdout, 'data')
+      connection.stdin.write("BEGIN; LOCK TABLE public.leagues IN ACCESS EXCLUSIVE MODE; SELECT 'locked';\n")
+      await expect.poll(async () => await locked.then(([chunk]) => String(chunk).trim())).toBe('locked')
+      await page.goto('/', { waitUntil: 'commit' })
+      await expect(page.getByRole('status').filter({ hasText: '所属リーグを読み込んでいます' })).toBeVisible({ timeout: 3000 })
+      if (browserName === 'chromium') {
+        await page.screenshot({ path: testInfo.outputPath('home-loading.png'), timeout: 3000 })
+      }
+    } finally {
+      connection.stdin.end('COMMIT;\n')
+      expect((await closed)[0]).toBe(0)
+    }
+    await expect(page.getByRole('link', { name: 'ブラウザリーグB メンバー' })).toBeVisible()
+
+    localSQL('REVOKE SELECT ON public.leagues FROM mjstats_api;')
+    try {
+      await page.goto('/')
+      await expect(page.getByRole('main').getByRole('alert')).toHaveText('所属リーグを取得できませんでした。')
+      await expect(page.getByText('所属しているリーグがありません。')).toHaveCount(0)
+    } finally {
+      localSQL('GRANT SELECT ON public.leagues TO mjstats_api;')
+    }
+    await page.getByRole('link', { name: '再試行', exact: true }).click()
+    await expect(page.getByRole('link', { name: 'ブラウザリーグA オーナー' })).toBeVisible()
+
+    // The saved selection must be checked against the next Go list.
+    localSQL(`UPDATE public.league_members SET status='left', ended_at=now(), version=version+1
+      WHERE league_id='${leagueB}' AND user_id='${a.id}';`)
+    await page.goto('/matches')
+    await expect(page).toHaveURL(pathA)
+    await page.goto(`/leagues/${leagueB}`)
+    await expect(page.getByRole('main').getByRole('alert')).toHaveText('このリーグは閲覧できません。')
+    await expect(page.getByRole('link', { name: '対局を入力' })).toHaveCount(0)
     await page.getByRole('link', { name: 'アカウント' }).click()
     await page.getByRole('button', { name: 'このブラウザからログアウト' }).click()
     await expect(page).toHaveURL(/\/login/)
@@ -120,8 +180,8 @@ test('Q-14/Q-26: scoped SSR history, league and user switching, and the league e
     await expect(page.getByRole('link', { name: 'ブラウザリーグB オーナー' })).toBeVisible()
     await expect(page.getByRole('link', { name: /ブラウザリーグA/ })).toHaveCount(0)
     await page.goto('/matches/new')
-    await expect(page.getByRole('link', { name: '所属リーグを選ぶ' })).toBeVisible()
-    await expect(page.getByRole('combobox')).toHaveCount(0)
+    await expect(page).toHaveURL(pathB + '/new')
+    await expect(page.getByLabel('素点 1', { exact: true })).toHaveValue('')
   } finally {
     localSQL(`BEGIN;
       DELETE FROM public.match_results WHERE league_id IN ('${leagueA}','${leagueB}');

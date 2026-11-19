@@ -143,7 +143,7 @@ test('Q-09/Q-10/Q-21: registration, browser/SSR, refresh, recovery and local log
     (await session(context)).value.refresh_token !== beforeRedirect,
   ).toBeTruthy()
   await page.goto('/matches/new')
-  await expect(page.getByText('所属リーグの履歴から対局を入力できます。')).toBeVisible()
+  await expect(page.getByText('所属しているリーグがありません。')).toBeVisible()
   await expect(page.getByRole('button', { name: '計算結果をプレビュー' })).toHaveCount(0)
   const stopped = await context.request.post(`${api}/api/matches/calculate`, {
     headers: { Authorization: `Bearer ${(await session(context)).value.access_token}` },
@@ -151,8 +151,8 @@ test('Q-09/Q-10/Q-21: registration, browser/SSR, refresh, recovery and local log
   })
   expect(stopped.status()).toBe(410)
   expect((await stopped.json()).error.code).toBe('API_RETIRED')
-  await page.getByRole('link', { name: '所属リーグを選ぶ' }).click()
-  await expect(page).toHaveURL('/matches')
+  await page.getByRole('link', { name: 'ホーム', exact: true }).click()
+  await expect(page).toHaveURL('/')
   await expect(page.getByText('所属しているリーグがありません。')).toBeVisible()
   const ssr = await context.request.get('http://localhost:3000/matches')
   expect(ssr.status()).toBe(200)
@@ -163,7 +163,7 @@ test('Q-09/Q-10/Q-21: registration, browser/SSR, refresh, recovery and local log
   // Expired access token + a real refresh token: refresh must write a new cookie.
   const oldRefresh = await expireAccessToken(context)
   await page.goto('/matches')
-  await expect(page.getByRole('heading', { name: '対局履歴' })).toBeVisible()
+  await expect(page.getByRole('heading', { name: '対局履歴のリーグを選択' })).toBeVisible()
   const refreshed = await session(context)
   expect(refreshed.value.refresh_token !== oldRefresh).toBeTruthy()
   expect(
@@ -218,7 +218,7 @@ test('Q-09/Q-10/Q-21: registration, browser/SSR, refresh, recovery and local log
     'パスワードを更新しました',
   )
   await page.getByRole('link', { name: 'MJ-Stats に戻る' }).click()
-  await expect(page).toHaveURL('/matches')
+  await expect(page).toHaveURL('/')
   await page.goto('/account')
   await expect(page.getByLabel('表示名', { exact: true })).toHaveValue(
     '名前変更😀',
@@ -310,7 +310,7 @@ test('Q-07/Q-10: CORS, invalid confirmation and unsafe return destinations', asy
   await page.goto('/login?returnTo=https://evil.invalid')
   expect(
     await page.getByRole('link', { name: '新規登録' }).getAttribute('href'),
-  ).toBe('/signup?returnTo=%2Fmatches')
+  ).toBe('/signup?returnTo=%2F')
 })
 
 test('Q-10: changing accounts discards the previous viewer and SSR cache', async ({

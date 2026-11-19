@@ -2,6 +2,7 @@
 
 import { useEffect, useEffectEvent, useRef, useState, type ReactNode } from 'react'
 import { useViewer } from '@/components/auth/viewer-provider'
+import { leagueHome } from '@/lib/leagues/paths'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -118,7 +119,7 @@ function JoinForm({ groupNumber, subject }: { groupNumber: string; subject: stri
     if (!result) return
     discardCode()
     if (result.membership.status === 'active') {
-      window.location.assign(`/matches/league/${leagueID}`)
+      window.location.assign(leagueHome(leagueID))
     } else {
       setMessage('現在の所属は終了しています。参加する場合は有効な招待を確認してください。')
     }

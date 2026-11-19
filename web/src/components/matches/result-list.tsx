@@ -36,7 +36,7 @@ export function ResultList({ results, detailed = false }: { results: MatchHistor
               {player.rank}位 {player.display_name}
               {(names.get(player.display_name) ?? 0) > 1 && ` (${player.user_id.slice(0, 8)})`}
             </span>
-            <span className="shrink-0 tabular-nums">
+            <span className="min-w-0 tabular-nums wrap-anywhere">
               {player.raw_score.toLocaleString("ja-JP")}点 · {displayPoint(player.point)} pt
             </span>
           </div>
