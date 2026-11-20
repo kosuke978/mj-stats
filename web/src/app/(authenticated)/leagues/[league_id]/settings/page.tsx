@@ -18,7 +18,7 @@ export default async function SettingsPage({ params }: { params: Promise<{ leagu
     const data = await Promise.all([
       serverAPI<{ league: League }>(api, path),
       referencePages<Member>(api, "members", path),
-      referencePages<MatchRule>(api, "rules", path),
+      referencePages<MatchRule>(api, "rules", path, { available: "all" }),
       referencePages<Season>(api, "seasons", path),
       referencePages<Participant>(api, "participants", path),
       referencePages<ParticipantLink>(api, "participant-links", path),
