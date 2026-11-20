@@ -1,6 +1,6 @@
 # 実装済み機能とAPI契約
 
-Step 2は [PR #10](https://github.com/kosuke978/mj-stats/pull/10)、Step 3は [PR #11](https://github.com/kosuke978/mj-stats/pull/11) でマージ済み。各Stepの実行結果は [品質・受入](quality-and-acceptance.md) に記録する。
+Phase 2.5のStep 1〜5はマージ済み。最新の工程と公開前の条件は [ロードマップ](product-roadmap.md)、実行結果は [品質・受入](quality-and-acceptance.md) を参照する。
 
 ## Step 5の順位表・管理
 
@@ -12,13 +12,16 @@ D-08/D-14/D-15/D-19を実装。以下のパスは `/api/leagues/{league_id}` 配
 | PATCH /settings | 運営のみ。必須 `name,search_listed,version,client_request_id` |
 | POST /rules | 運営のみ。必須 `name,default_points,return_points,uma,client_request_id`。4ウマは整数・降順・合計0、S/Rは正の100点単位、R≧S。新しいIDで初版を作成 |
 | PATCH /rules/{id} | 運営のみ。必須 `available,version,client_request_id`。計算条件と過去対局への参照を保つ |
-| POST /seasons・PATCH /seasons/{id} | 運営のみ。必須 `name,client_request_id`。開始・終了を `start_date,end_date`（YYYY-MM-DDまたはnull）で設定。PATCHは版が必須。対局の現行版・変更履歴に登場したシーズンの期間は409 |
+| POST /seasons | 運営のみ。必須 `name,client_request_id`。開始・終了はそれぞれ `start_date,end_date`（YYYY-MM-DDまたはnull、省略時は期間指定なし） |
+| PATCH /seasons/{id} | 運営のみ。必須 `version,client_request_id` と、`name,start_date,end_date` のうち1つ以上。省略した項目は維持。日付に明示したnullはその境界を解除。更新後の開始・終了を検証し、逆転は400。対局の現行版・変更履歴で使用済みの期間の変更・解除は409 `STATE_CONFLICT`。期間を維持した改名は可 |
 | PATCH /guests/{user_id} | 運営のみ。必須 `name,version,client_request_id`。有効な本人対応があるゲストは409 |
 | GET /owner-transfers/current | 200 `{owner_transfer}`。運営または指名本人に未確定の指名を返す。空はnull。期限は日本時間で表示。期限切れは表示上 `expired`、次の指名でDBにも確定 |
 
 - 全書込みは `application/json`。版は10進正整数文字列。訂正・取消の成功は200 `{match_id,applied_version}`。同じリーグ・操作者内で訂正と取消は同じ操作IDの名前空間を使い、新規保存とは独立する。版競合は `VERSION_CONFLICT`、操作ID不一致は `IDEMPOTENCY_CONFLICT`、取消済みの新規変更は `STATE_CONFLICT`。
 - 新しい管理書込みは作成201、更新200、同一内容の再送200で `{id,version}`。操作IDは本人・操作種別で一意。リーグと対象もハッシュに含む。脱退だけは有効な本人の同じ確定済み操作を脱退後に再送できる。
-- 訂正では現在有効な参加者を4人選ぶ。利用停止ルールは元の対局の適用ルールとしてのみ再利用可能。現在のルール、保存済みの正確値、対局ID・作成時刻・記録者を変更履歴と照合できる。取消では結果を保持する。
+- リーグ設定のルール一覧は `available=all` を使い、停止済みのルールも再開できる。新規対局入力では利用可能なルールを取得する。
+- 訂正で維持できるのは対象対局に記録済みの原ID。有効所属の参加者に加え、記録済みなら脱退・除名済みの参加者と紐付け済みゲストの原IDを維持できる。交代で追加できるのは新規入力と同じ候補。原IDと現在の本人IDの重複は拒否する（D-14、D-15）。利用停止ルールは元の対局の適用ルールとして再利用できる。現在のルール、保存済みの正確値、対局ID・作成時刻・記録者を変更履歴と照合できる。取消では結果を保持する。
+- シーズンPATCHの再送は、日付の省略と明示nullを区別して照合し、最初に適用した版を返す。修正前に確定した操作は当時の方式で照合して元の版を返す。
 - 順位表の `entries` に `rank,user_id,display_name,kind,membership_status,total_point,match_count` を返す。成績のあるゲストと脱退・除名済み参加者を含む。現在有効な紐付けは本人IDに集約する。
 - `GET /events` と `GET /matches/{id}/revisions` は運営のみ。ID・操作者・時刻・操作・版・理由・変更前後を返す。カーソルは本人・リーグ・一覧・対象に紐付く。招待の秘密値、リクエストハッシュ、Auth情報は公開レスポンスに含めない。
 - Webの順位表・設定は `/leagues/{id}/ranking` と `/leagues/{id}/settings`。設定に招待・本人紐付け・操作記録へのリンクがある。既存の対局詳細配下 `/matches/league/{id}/{match_id}/edit` と `/revisions` を運営向けに追加。指名への同意と脱退はリーグホーム。管理送信の結果不明時は同じ画面から同じ操作を再送できる。
@@ -39,6 +42,7 @@ D-08/D-14/D-15/D-19を実装。以下のパスは `/api/leagues/{league_id}` 配
 
 | 操作 | 入力 | 応答 |
 | --- | --- | --- |
+| GET `/participants` | `cursor,limit` | 200 `{participants,next_cursor}`。有効所属の登録者・未紐付けゲストを返す。本人紐付けが有効なゲストは一覧から外れ、有効所属の本人が候補になる。訂正画面は対局詳細から元の原IDを補い、本人確認・解除画面は申請一覧から既存の紐付けを取得する |
 | POST `/guests` | `{name,client_request_id}` | 初回201、同じ操作は200 `{participant}`。次の対局では参加者一覧の既存IDを使う |
 | POST `/matches/calculate` | `{rule_id,players:[{user_id,raw_score}×4]}` | 200 `{rule_id,results}`。保存時と同じ計算を実行 |
 | POST `/matches` | 計算の入力＋`{season_id?,match_date,client_request_id}` | 初回201、同じ操作は200、どちらも保存したMatchを返す |
@@ -52,11 +56,15 @@ Matchは `id,league_id,rule_id,season_id,match_date,created_at,recorded_by,statu
 
 保存に含まれる記録者は認証済みの永続参加者IDで、対象リーグの所属登録者は代理記録できる。素点はDBの整数範囲内の100点単位で、0・負点可。人数、原IDと本人の重複、開始時総点、対象リーグ、利用可能なルールを検証する。本文の `point`、`rank`、`recorded_by` やその他の未知フィールドは400。新規日時は未来を拒否する。入力はオフセット付きRFC 3339で小数秒は最大6桁、応答はUTC。指定したシーズンではAsia/Tokyoの暦日で開始日・終了日を含める。省略と明示NULLはどちらも未指定。
 
-同じリーグ・記録者・操作IDの保存再送は正規化後の入力で照合する。UUIDの大小文字、同じ瞬間の時差表記、シーズン省略/NULLを揃え、参加者の配列順を保持する。内容違いは409 `IDEMPOTENCY_CONFLICT`。保存済みの再送は現在も有効な本人・所属を確認し、元ルールの利用停止後も同じ対局を返す。ゲスト・申請・審査は操作者と操作種別ごとに操作IDを記録し、対象リーグと内容も照合する。紐付けの状態は `pending/active/rejected`。承認・却下に確認内容1〜500文字と文字列の版を要求する。別人への上書き・既存同卓の本人重複は409。
+新規計算・保存では、本人紐付けが有効なゲストの原IDを409 `STATE_CONFLICT`で拒否し、本人の候補を選び直すよう案内する。脱退・除名済みの参加者は404。解除後はゲストが候補に復帰し、既存の成績集計も原IDへ戻る。
+
+同じリーグ・記録者・操作IDの保存再送は正規化後の入力で照合する。UUIDの大小文字、同じ瞬間の時差表記、シーズン省略/NULLを揃え、参加者の配列順を保持する。内容違いは409 `IDEMPOTENCY_CONFLICT`。保存済みの再送は現在も有効な本人・所属を確認し、元ルールの利用停止やゲストの本人紐付け後も同じ対局の現在の状態を返す。ゲスト・申請・審査は操作者と操作種別ごとに操作IDを記録し、対象リーグと内容も照合する。紐付けの状態は `pending/active/rejected/revoked`。承認・却下に確認内容1〜500文字と文字列の版を要求する。別人への上書き・既存同卓の本人重複は409。
 
 Webは `/matches/league/{league_id}` の履歴から `/new`、`/{match_id}`、`/participant-links` へつなぐ。DBの選択肢を取得し、ゲストを作って候補へ追加できる。タブ内の本人・リーグごとの下書きに、結果不明の保存本文と操作IDを保持する。再送完了後は詳細に進める。循環小数は小数4桁と省略記号で表示し、プレビュー・詳細で元の分数とIDを確認できる。
 
 ## 2-7のWeb接続
+
+この節はStep 2時点の画面の記録。現在の入口と復帰先は[Step 4のホームと復帰](#step-4のホームと復帰)を参照。
 
 `/matches` に作成と参加への入口を追加した。 `/leagues/new` の作成後は作成リーグの履歴へ進む。 `/leagues/search` は掲載名検索・ページングと番号入力を提供する。履歴のowner/adminだけに招待管理への入口があり、 `/matches/league/{id}/invites` で現行の取得、発行・再発行、失効を操作できる。直URLでもGoの対象リーグの所属とroleを照合する。
 
@@ -104,6 +112,8 @@ Webは `/matches/league/{league_id}` の履歴から `/new`、`/{match_id}`、`/
 同じ本人・操作ID・正規化後の名前で再送すると200。同じリーグと初期ルールのIDを使って参照時点の値を返す。再送時に参照権限も確認する。同じ本人・操作IDで名前が違えば409 `IDEMPOTENCY_CONFLICT`。新規操作では新しいUUIDを使い、通信が切れた場合は同じ内容とUUIDを保持する。番号は衝突時に最大5回再生成し、上限到達・DB障害は503。未認証は401、本人情報なしまたは名前未設定は403。リーグ、owner所属、初期ルール、操作記録は一括で確定する。
 
 ## 2-3の参照API実装
+
+以下は2-3時点で追加した契約。現在の参加者候補は[Step 3の対局入力・ゲストAPI](#step-3の対局入力ゲストapi)、ルール管理は[Step 5の順位表・管理](#step-5の順位表管理)を参照する。
 
 | GET | 応答 | 範囲 |
 | --- | --- | --- |
@@ -409,7 +419,7 @@ field_errorsは入力不備の場合だけ返し、messageは表示用、分岐�
 | POST /api/leagues/join-preview | 設定済、{group_number,code} | 200で最小リーグ情報とexpires_at。形式不正は400、形式が正しい不一致/期限切れ/失効は404 INVALID_INVITE。所属作成なし / Step 2 |
 | POST /api/leagues/{league_id}/join | 設定済、{code,client_request_id} | 200 {membership}。要求時点の招待を検証。未所属/退出/除名済みはmemberへ、有効所属は元roleを維持 / Step 2 |
 | GET /api/leagues/{league_id} | 所属 | 200でリーグと本人role。一般情報に参加資格を含めない / Step 2 |
-| PATCH /api/leagues/{league_id} | 運営、{name?,search_listed?,version,client_request_id} | 200、設定と変更記録を一括更新。owner_idは受け付けない / Step 5 |
+| PATCH /api/leagues/{league_id}/settings | 運営、{name,search_listed,version,client_request_id} | 200、設定と変更記録を一括更新 / Step 5 |
 | GET /api/leagues/{league_id}/participants | 所属、cursor/limit | 200 {participants,next_cursor}。id/name/kind/versionを持つ新規選択可能な有効参加者。legacyを除き、紐付け済みゲストは本人候補へまとめる / Step 2〜3 |
 | POST /api/leagues/{league_id}/guests | 所属、{name,client_request_id} | 201 {participant}。ゲストと対象リーグ関連を一括作成。既存の同名を自動取得しない / Step 3 |
 | PATCH /api/leagues/{league_id}/guests/{user_id} | 運営、{name,version,client_request_id} | 200。対象は未紐付けゲストだけ。登録者本人の名前はmeから変更 / Step 5 |
@@ -417,7 +427,7 @@ field_errorsは入力不備の場合だけ返し、messageは表示用、分岐�
 | POST /api/leagues/{league_id}/rules | 運営、{name,default_points,return_points,uma:[4整数],client_request_id} | 201、新しいrule ID。S/Rは正の100点単位、R≥S、ウマ降順/合計0、全てDB整数範囲 / Step 2の初期版、Step 5の管理 |
 | PATCH /api/leagues/{league_id}/rules/{rule_id} | 運営、{available,version,client_request_id}のみ | 200。計算条件の更新は400で拒否し、新版作成へ案内。旧対局は元rule IDを維持 / Step 5 |
 | POST /api/leagues/{league_id}/seasons | 運営、{name,start_date?,end_date?,client_request_id} | 201、YYYY-MM-DDまたはNULL。期間逆転を拒否 / Step 2の基盤、Step 5の管理 |
-| PATCH /api/leagues/{league_id}/seasons/{season_id} | 運営、{name?,start_date?,end_date?,version,client_request_id} | 200。使用済み期間の日付変更は409、名前だけの変更は可。締め操作なし / Step 5 |
+| PATCH /api/leagues/{league_id}/seasons/{season_id} | 運営、{name?,start_date?,end_date?,version,client_request_id}、更新項目1つ以上 | 200。省略は保持、日付のnullは該当境界を解除。使用済み期間の変更・解除は409、名前だけの変更は可 / Step 5とマージ後レビュー |
 
 me以外の名前はゲスト1〜30、リーグ/ルール/シーズン1〜100コードポイントで、前後空白・改行/制御文字の扱いはD-24と同じ。同名はIDで区別する。検索はUnicode NFKC・小文字化した名前の部分一致、qは2〜100コードポイント、%/_はワイルドカードでなく文字として扱う。元の表示名は検索正規化で置換しない。
 

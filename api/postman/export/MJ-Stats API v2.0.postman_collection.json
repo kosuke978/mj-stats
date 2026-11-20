@@ -962,10 +962,10 @@
           }
         ],
         "url": "{{base_url}}/api/leagues/{{league_id}}/seasons/{{season_id}}",
-        "description": "運営のみ。使用済み期間の変更は409。",
+        "description": "運営のみ。名前だけの更新は期間を維持。片方の日付を送ると既存のもう片方と検証し、nullを送った日付だけを解除。使用済みの期間の変更・解除と版競合は409。同じ操作ID・本文の再送は200。",
         "body": {
           "mode": "raw",
-          "raw": "{\n  \"client_request_id\": \"{{client_request_id}}\",\n  \"version\": \"{{object_version}}\",\n  \"name\": \"更新したシーズン\",\n  \"start_date\": null,\n  \"end_date\": null\n}",
+          "raw": "{\n  \"client_request_id\": \"{{client_request_id}}\",\n  \"version\": \"{{object_version}}\",\n  \"name\": \"更新したシーズン\"\n}",
           "options": {
             "raw": {
               "language": "json"

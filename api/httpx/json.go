@@ -56,6 +56,9 @@ func exactFields(raw json.RawMessage, typ reflect.Type) bool {
 	for typ.Kind() == reflect.Pointer {
 		typ = typ.Elem()
 	}
+	if typ == reflect.TypeFor[json.RawMessage]() {
+		return true // The caller validates the raw field's type and presence.
+	}
 	switch typ.Kind() {
 	case reflect.Struct:
 		var fields map[string]json.RawMessage

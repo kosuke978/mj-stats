@@ -153,7 +153,7 @@ func (w *LeagueWrite) changeMatch(c *gin.Context, meta versionedReason, operatio
 			if input.SeasonID != nil && !matchInSeason(c, ctx, tx, l.ID, *input.SeasonID, date) {
 				return 0, nil
 			}
-			results := calculateMatch(c, ctx, tx, l.ID, input.RuleID, input.Players, true, ruleID)
+			results := calculateMatch(c, ctx, tx, l.ID, input.RuleID, input.Players, true, ruleID, id)
 			if results == nil {
 				return 0, nil
 			}

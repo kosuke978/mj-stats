@@ -15,6 +15,7 @@ type managementCommand struct {
 	operation, requestID, target, version, reason string
 	ownerOnly, managerOnly, allowFormer           bool
 	payload                                       any
+	legacyPayload                                 any
 }
 
 type managementChange struct {
@@ -42,7 +43,11 @@ func (w *LeagueWrite) manage(c *gin.Context, command managementCommand, change m
 			return 0, nil
 		}
 		hash := requestHash([]any{l.ID, command.target, command.version, command.reason, command.payload})
-		target, ok := replayLeagueEvent(c, ctx, tx, actor, command.operation, command.requestID, hash)
+		var legacyHash string
+		if command.legacyPayload != nil {
+			legacyHash = requestHash([]any{l.ID, command.target, command.version, command.reason, command.legacyPayload})
+		}
+		target, ok := replayLeagueEvent(c, ctx, tx, actor, command.operation, command.requestID, hash, legacyHash)
 		if !ok {
 			return 0, nil
 		}

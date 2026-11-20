@@ -1,6 +1,6 @@
 # 環境構築と運用
 
-この手順は現在のリポジトリ構成に基づく。Step 1ブランチに専用ローカルDB/Auth/メールとbaseline・認証migrationを追加した。開発者の再開指示後、共有DBをREAD ONLYで取得し実コピーへの増分を検証、新設の専用QAへmigrationを適用した。本番デプロイ設定は未整備で、元の共有環境へは未適用。
+Phase 2.5で追加した専用ローカルDB/Auth/メールと移行・復旧の手順。Step 1では共有DBをREAD ONLYで取得し、実コピーへの増分を隔離検証したうえで、新設の専用QAにStep 1までを適用した。元共有DBは未適用。本番の適用・公開は開発者判断待ち。
 
 ## 必要なもの
 
@@ -84,7 +84,7 @@ node scripts/run-local.mjs web-start
 
 ### migrationとAuth権限の適用
 
-- 空の専用スタック：CLI start/resetが [migrations](../supabase/migrations) の8本を時刻順に通常postgresとして適用する。D-40の旧 `supabase/permissions/step1_auth.sql` は適用しない。
+- 空の専用スタック：CLI start/resetが [migrations](../supabase/migrations) を時刻順に通常postgresとして適用する。マージ後レビュー修正までで17本。D-40の旧 `supabase/permissions/step1_auth.sql` は適用しない。
 - baselineは観測済み7表39列20制約9 indexを再現する。既存DBへCREATE TABLEを再実行しない。既存環境の正確な列・制約・index・RLS・policy・triggerを照合した後だけbaselineを履歴へ記録し、増分を適用する。再開後の実コピーで一致と増分保全を確認した。元の共有DBには適用しない。
 - `node scripts/test-migrations.mjs` は識別済みコンテナ内の使い捨てDBで、Authメタデータ契約と合成旧データを用意して増分と再適用拒否を確認する。`--snapshot .local/legacy-actual-20261117.json` を指定すると実コピーの構造を照合し、全元列値・参照を比較する。元のスナップショットは `api` で `go run ./cmd/legacy-snapshot ../.local/legacy-actual-20261117.json` によりREAD ONLY取得する。生成した一時DBだけをfinallyで削除する。
 - D-41ではpostgres所有の非公開viewを通じて限定7列と行ロックを委譲する。関数所有はNOLOGIN/NOBYPASSRLS、viewのSELECT/UPDATE(id)だけでAuthへの直接権限は持たない。viewへの実UPDATEはtriggerで拒否する。AuthのRLS/policyを変更せず、所有者やsupabase_adminの追加作業を要求しない。
@@ -224,6 +224,11 @@ migration試験は環境を識別してから使い捨てDBを作る。空DB全�
 
 障害時は管理書込みと影響範囲の対局記録を止める。取消済み対局、理由・前後、操作ID、所属・本人対応を保持し、互換性のある修正版を適用する。DB復元が必要なら直前バックアップと書込み停止までの差分を隔離先へ取り、監査・4結果・分数・owner参照・版・再送を照合する。データの切戻しは照合と開発者判断を経て行う。公開前の実環境受入は[実設定の確認](#実設定の確認と公開前の条件)を参照する。
 
+### マージ後レビュー修正の増分
+
+Step 5までの16本の後に、`20261120000000_retain_match_participant.sql` を適用する。Goを先に切り替えると、脱退・除名済みの原IDを維持する訂正が旧RLSに拒否される。対象と履歴を照合し、書込み停止中にDB→Go→Webの順で切り替える。専用ローカルのQ-25は空DB・合成・保存済み実コピー・隔離復元・再適用0件の手順を使う。元共有DB・管理QA・本番への適用は別途判断する。
+
+PRチェックはGitHub Actionsの `PR checks`。Goは `go test ./...` と `go vet ./...`。Webは `npm ci`、`npm run lint`、`npx next typegen`、`npx tsc --noEmit`、`npm run test:auth`。通常のチェックには専用スタックを起動する必要がない。実Go・DB・Authの受入では上記の専用ローカルを使い、Goにローカルの招待鍵と試行制限鍵を設定する。ブラウザ試験で短時間に繰り返し照合する場合は専用プロセスの上限を上げ、既定の上限と429はGoの統合試験で確認する。
 
 ## 起動
 
@@ -254,8 +259,8 @@ Webは通常 `http://localhost:3000`、APIは通常 `http://localhost:8080`。�
 seedを使う前に、専用DBの実スキーマを確認する。
 
 1. [確認済みスキーマ](architecture.md) と投入先の7テーブル、ID型、FK/UNIQUE、既定値、NULL可否を照合する。今回の接続先の実体は取得済みだが、別環境も同じとは仮定しない。
-2. 実DBとseedのseason IDはUUID、Go型は整数である。不一致を設計で整理し、Step 2の契約・移行で解消する。
-3. recorded_byは実DBでNULL可・既定値なし。seedは設定するがAPIは省略し、既存19対局中18件で未設定。後から本人を推測して補完しない。
+2. 2026-10-06の調査では実DBとseedのseason IDはUUID、旧APIは整数だった。現在のリーグ別契約ではUUIDまたは未指定を使う。
+3. 初回調査では旧19対局中18件の `recorded_by` が未設定だった。現在の保存はGoが認証済みの本人を記録する。旧行の本人は推測で補完しない。
 4. `ON CONFLICT` の対象となるPK/UNIQUEがあることを確認する。`users` 等は衝突時に名前を更新するため、無害な読み取り操作ではない。
 5. 接続先が開発用であることと影響を確認した上で、SQL Editor等から投入する。
 
@@ -275,11 +280,12 @@ DB接続確認：
 curl -i http://localhost:8080/api/health
 ```
 
-2-3の確認は同じ専用ローカルAuthの本人Bearerを使用する。access tokenのローカル値は履歴やログへ残さない。
+同じ専用ローカルAuthの本人Bearerを使用する。access tokenのローカル値は履歴やログへ残さない。
 
-1. `/login` → `/matches` で有効所属を確認し、リーグを選ぶ。空の所属は案内を表示する。
-2. `/matches/league/{league_id}` で履歴・シーズン・次ページを確認する。別の所属へ切り替え、別リーグの成績が混ざらないことを確認する。
-3. `/matches/new` は停止表示。名前設定済み本人でも旧計算・保存POSTは409、scopeなし旧GETは400。通常対局INSERTも権限で拒否する。
+1. `/login` → `/` で有効所属を確認し、リーグを選ぶ。安全な復帰先が指定されている場合は、認可付きで目的の画面へ戻る。
+2. リーグホームから新規対局入力と `/matches/league/{league_id}` の履歴へ進む。有効なルールと登録者・未紐付けゲストを候補に表示する。履歴ではシーズン・次ページ・詳細を確認し、別リーグの成績が混ざらないことを確認する。
+3. 名前設定済み本人の旧計算・保存POSTは410 `API_RETIRED`、`league_id` なしの旧履歴GETは400。2-3時点の409と停止画面は[当時の契約](features-api.md#2-3時点の履歴と停止中の旧経路)を参照する。
+4. 運営者の設定更新は `PATCH /api/leagues/{league_id}/settings`。停止したルールは設定で再開できる。シーズンPATCHは省略項目を保持し、明示したnullで日付境界を解除する。使用済み期間は409で保護し、名前の変更はできる。
 
 ### Postman
 

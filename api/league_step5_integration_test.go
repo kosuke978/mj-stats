@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"crypto/sha256"
 	"database/sql"
 	"encoding/json"
 	"fmt"
@@ -9,9 +10,11 @@ import (
 	"reflect"
 	"sort"
 	"testing"
+
+	"github.com/lib/pq"
 )
 
-func testStep5(t *testing.T, ctx context.Context, admin *sql.DB, call apiCall, ownerToken, adminToken, memberToken, owner, manager, member string) {
+func testStep5(t *testing.T, ctx context.Context, db, admin *sql.DB, call apiCall, ownerToken, adminToken, memberToken, owner, manager, member string) {
 	f := createLeagueFixture(t, ctx, admin, owner, manager)
 	root, other := "/api/leagues/"+f.a, "/api/leagues/"+f.b
 	exec := func(q string, args ...any) {
@@ -130,6 +133,43 @@ func testStep5(t *testing.T, ctx context.Context, admin *sql.DB, call apiCall, o
 	}
 	seasonChange := map[string]any{"client_request_id": uid(), "name": "Q20 season empty (edited)", "version": "1", "start_date": "2020-01-01"}
 	verify("PATCH", root+"/seasons/"+empty, adminToken, seasonChange, 200, "")
+	seasonPath := root + "/seasons/" + empty
+	seasonRange := func(id string) string {
+		return row(`SELECT name||'|'||COALESCE(start_date::text,'-')||'|'||COALESCE(end_date::text,'-')
+			FROM public.seasons WHERE id=$1`, id)
+	}
+	endOnly := map[string]any{"client_request_id": uid(), "version": "2", "end_date": "2019-12-31"}
+	verify("PATCH", seasonPath, adminToken, endOnly, 400, "INVALID_INPUT")
+	endOnly["end_date"] = "2020-12-31"
+	verify("PATCH", seasonPath, adminToken, endOnly, 200, "")
+	startOnly := map[string]any{"client_request_id": uid(), "version": "3", "start_date": "2021-01-01"}
+	verify("PATCH", seasonPath, adminToken, startOnly, 400, "INVALID_INPUT")
+	if got := seasonRange(empty); got != "Q20 season empty (edited)|2020-01-01|2020-12-31" {
+		t.Fatalf("one-sided season date patch: %s", got)
+	}
+	startOnly["start_date"] = nil
+	verify("PATCH", seasonPath, adminToken, startOnly, 200, "")
+	if got := seasonRange(empty); got != "Q20 season empty (edited)|-|2020-12-31" {
+		t.Fatalf("explicit null must clear only the supplied date: %s", got)
+	}
+	if result := verify("PATCH", seasonPath, adminToken, endOnly, 200, ""); result["version"] != "3" {
+		t.Fatal("replay should return the originally applied version")
+	}
+	endOnly["start_date"] = nil
+	verify("PATCH", seasonPath, adminToken, endOnly, 409, "IDEMPOTENCY_CONFLICT")
+	// Simulate a pre-fix audit event whose hash did not distinguish omission and null.
+	legacyID := seasonChange["client_request_id"]
+	legacyBody, err := json.Marshal([]any{f.a, empty, "1", "", []any{seasonChange["name"], "2020-01-01", nil}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	exec(`UPDATE public.league_events SET request_hash=$2 WHERE client_request_id=$1`, legacyID, fmt.Sprintf("%x", sha256.Sum256(legacyBody)))
+	if result := verify("PATCH", seasonPath, adminToken, seasonChange, 200, ""); result["version"] != "2" {
+		t.Fatal("pre-fix season replay must preserve the applied version")
+	}
+	if got := seasonRange(empty); got != "Q20 season empty (edited)|-|2020-12-31" {
+		t.Fatalf("replay must leave the latest season period intact: %s", got)
+	}
 	rule := verify("POST", root+"/rules", adminToken, map[string]any{"client_request_id": uid(), "name": "Q18 new rule", "default_points": 25000,
 		"return_points": 30000, "uma": []int{20, 10, -10, -20}}, 201, "")["id"].(string)
 	verify("PATCH", root+"/rules/"+rule, adminToken, map[string]any{"client_request_id": uid(), "available": false, "version": "1"}, 200, "")
@@ -193,6 +233,17 @@ func testStep5(t *testing.T, ctx context.Context, admin *sql.DB, call apiCall, o
 	seasonChange["version"] = "1"
 	seasonChange["client_request_id"] = uid()
 	verify("PATCH", root+"/seasons/"+f.season, adminToken, seasonChange, 409, "STATE_CONFLICT")
+	usedPath := root + "/seasons/" + f.season
+	usedDates := row(`SELECT COALESCE(start_date::text,'-')||'|'||end_date::text FROM public.seasons WHERE id=$1`, f.season)
+	rename := map[string]any{"client_request_id": uid(), "name": "対局に使用したシーズン", "version": "1"}
+	verify("PATCH", usedPath, adminToken, rename, 200, "")
+	verify("PATCH", usedPath, adminToken, rename, 200, "")
+	if got := seasonRange(f.season); got != "対局に使用したシーズン|"+usedDates {
+		t.Fatalf("rename must keep the used range: %s", got)
+	}
+	verify("PATCH", usedPath, adminToken, map[string]any{"client_request_id": uid(), "version": "1", "name": "旧版"}, 409, "VERSION_CONFLICT")
+	verify("PATCH", usedPath, adminToken, map[string]any{"client_request_id": uid(), "version": "2", "end_date": nil}, 409, "STATE_CONFLICT")
+	t.Log("Season PATCH: partial dates, null, name-only on a used season, used-date conflict, stale version, replay and legacy operation hash")
 	t.Log("Q-20 exact fixtures: all=799/30,199/30,199/30,-399/10 (3 each); S1, S2 and unassigned verified; cancelled results retained")
 
 	edit := makeMatch(guests[:4], []int{35000, 35000, 20000, 10000}, f.season)
@@ -267,7 +318,8 @@ func testStep5(t *testing.T, ctx context.Context, admin *sql.DB, call apiCall, o
 	originalResults := func() string {
 		return row(`SELECT jsonb_agg(to_jsonb(r) ORDER BY r.id)::text FROM public.match_results r WHERE league_id=$1`, f.a)
 	}
-	save([]string{member, guests[1], guests[2], guests[3]}, []int{40000, 30000, 20000, 10000}, nil)
+	memberMatch := save([]string{member, guests[1], guests[2], guests[3]}, []int{40000, 30000, 20000, 10000}, nil)["id"].(string)
+	memberMatchPath := root + "/matches/" + memberMatch
 	raw := originalResults()
 	unlinked := lookup("all")
 	assertRank(unlinked, guests[0], "199", "30", 3, 3)
@@ -280,6 +332,12 @@ func testStep5(t *testing.T, ctx context.Context, admin *sql.DB, call apiCall, o
 	if linked[guests[0]] != nil || originalResults() != raw {
 		t.Fatal("link altered original scores")
 	}
+	linkedCorrection := makeMatch(guests[:4], []int{35000, 35000, 20000, 10000}, f.season)
+	linkedCorrection["version"], linkedCorrection["reason"] = "2", "元のゲストIDを維持"
+	verify("PATCH", m1Path, adminToken, linkedCorrection, 200, "")
+	linkedReplacement := makeMatch(guests[:4], []int{40000, 30000, 20000, 10000}, nil)
+	linkedReplacement["version"], linkedReplacement["reason"] = "1", "紐付け済みゲストを別対局に追加"
+	verify("PATCH", memberMatchPath, adminToken, linkedReplacement, 409, "STATE_CONFLICT")
 	verify("PATCH", root+"/guests/"+guests[0], adminToken, map[string]any{"client_request_id": uid(), "name": "紐付け済み", "version": "1"}, 409, "STATE_CONFLICT")
 	revoke := reason("2", "紐付け先の訂正")
 	verify("POST", root+"/participant-links/"+link+"/revoke", adminToken, revoke, 403, "FORBIDDEN")
@@ -305,6 +363,39 @@ func testStep5(t *testing.T, ctx context.Context, admin *sql.DB, call apiCall, o
 	if !removedFound {
 		t.Fatal("removed participant's points were dropped")
 	}
+	removedIDs := []string{member, guests[1], guests[2], guests[3]}
+	newWithRemoved := makeMatch(removedIDs, []int{40000, 30000, 20000, 10000}, nil)
+	verify("POST", root+"/matches", ownerToken, newWithRemoved, 404, "NOT_FOUND")
+	addRemoved := makeMatch(removedIDs, []int{40000, 30000, 20000, 10000}, f.season)
+	addRemoved["version"], addRemoved["reason"] = "3", "別対局へ除名済み参加者を追加"
+	verify("PATCH", m1Path, adminToken, addRemoved, 404, "NOT_FOUND")
+	func() {
+		t.Helper()
+		tx, err := db.BeginTx(ctx, nil)
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer tx.Rollback()
+		if _, err := tx.ExecContext(ctx, `SELECT set_config('mjstats.league_id',$1,true),
+			set_config('mjstats.league_actor_id',$2,true)`, f.a, manager); err != nil {
+			t.Fatal(err)
+		}
+		_, err = tx.ExecContext(ctx, `UPDATE public.match_results SET user_id=$1
+			WHERE league_id=$2 AND match_id=$3 AND user_id=$4`, member, f.a, m1["id"], guests[0])
+		if dbError, ok := err.(*pq.Error); !ok || dbError.Code != "23514" {
+			t.Fatalf("direct replacement with a removed participant must be rejected: %v", err)
+		}
+	}()
+	retainRemoved := makeMatch(removedIDs, []int{41000, 29000, 20000, 10000}, nil)
+	retainRemoved["version"], retainRemoved["reason"] = "1", "除名済み参加者の素点を訂正"
+	resultID := row(`SELECT id::text FROM public.match_results WHERE match_id=$1 AND user_id=$2`, memberMatch, member)
+	verify("PATCH", memberMatchPath, adminToken, retainRemoved, 200, "")
+	verify("PATCH", memberMatchPath, adminToken, retainRemoved, 200, "")
+	if got := row(`SELECT id::text||':'||raw_score::text FROM public.match_results WHERE match_id=$1 AND user_id=$2`, memberMatch, member); got != resultID+":41000" {
+		t.Fatal("correcting a former participant must keep their original result row and apply the revised score")
+	}
+	newWithRemoved["version"], newWithRemoved["reason"] = "2", "素点を元に戻す"
+	verify("PATCH", memberMatchPath, adminToken, newWithRemoved, 200, "")
 	rejoin := map[string]any{"code": invitation["code"], "client_request_id": uid()}
 	if result := verify("POST", root+"/join", memberToken, rejoin, 200, "")["membership"].(map[string]any); result["role"] != "member" || result["user_id"] != member || result["version"] != "3" {
 		t.Fatal("invalid rejoin state")
@@ -313,7 +404,8 @@ func testStep5(t *testing.T, ctx context.Context, admin *sql.DB, call apiCall, o
 		t.Fatal("removal or rejoin changed original results")
 	}
 	// A scored owner remains in the ranking after handing over and leaving.
-	save([]string{owner, guests[1], guests[2], guests[3]}, []int{40000, 30000, 20000, 10000}, nil)
+	ownerIDs := []string{owner, guests[1], guests[2], guests[3]}
+	ownerMatch := save(ownerIDs, []int{40000, 30000, 20000, 10000}, nil)["id"].(string)
 
 	issue := func() string {
 		return verify("POST", root+"/owner-transfers", ownerToken, map[string]any{"to_user_id": member, "client_request_id": uid()}, 201, "")["id"].(string)
@@ -359,6 +451,15 @@ func testStep5(t *testing.T, ctx context.Context, admin *sql.DB, call apiCall, o
 	if entry := lookup("all")[owner]; entry["membership_status"] != "left" || entry["match_count"] != float64(1) {
 		t.Fatal("departed participant's points were dropped")
 	}
+	retainLeft := makeMatch(ownerIDs, []int{41000, 29000, 20000, 10000}, nil)
+	retainLeft["version"], retainLeft["reason"] = "1", "脱退済み参加者の素点を訂正"
+	verify("PATCH", root+"/matches/"+ownerMatch, memberToken, retainLeft, 200, "")
+	activeReplacement := makeMatch([]string{guests[4], guests[1], guests[2], guests[3]}, []int{41000, 29000, 20000, 10000}, nil)
+	activeReplacement["version"], activeReplacement["reason"] = "2", "有効参加者に訂正"
+	verify("PATCH", root+"/matches/"+ownerMatch, memberToken, activeReplacement, 200, "")
+	retainLeft["client_request_id"], retainLeft["version"] = uid(), "3"
+	verify("PATCH", root+"/matches/"+ownerMatch, memberToken, retainLeft, 404, "NOT_FOUND")
+	t.Log("Q-24: score-only corrections retain removed/left and linked original IDs; adding them to another result is rejected; active replacement is accepted")
 
 	verify("POST", root+"/members/"+manager+"/remove", memberToken, reason("1", "所属の整理"), 200, "")
 	verify("GET", root+"/events", adminToken, nil, 403, "LEAGUE_ACCESS_DENIED")

@@ -192,7 +192,9 @@ test("Q-09/Q-10/Q-19/Q-26: home, guest entry, exact history and safe draft recov
     await page.getByRole("link", { name: "対局を入力" }).click()
     await expect(page.getByLabel("素点 1", { exact: true })).toHaveValue("")
     const nextScores = ["60000", "30000", "15000", "-5000"]
-    const nextPlayers = [...guests.slice(0, 3), member.id]
+    const firstPlayer = page.getByRole("combobox", { name: "参加者 1", exact: true })
+    await expect(firstPlayer.locator(`option[value="${guests[0]}"]`)).toHaveCount(0)
+    const nextPlayers = [owner.id, ...guests.slice(1, 3), member.id]
     for (let i = 0; i < nextPlayers.length; i++) {
       await page.getByRole("combobox", { name: `参加者 ${i + 1}`, exact: true }).selectOption(nextPlayers[i])
       await page.getByLabel(`素点 ${i + 1}`, { exact: true }).fill(nextScores[i])
@@ -204,7 +206,8 @@ test("Q-09/Q-10/Q-19/Q-26: home, guest entry, exact history and safe draft recov
     await page.getByRole("button", { name: "保存する" }).click()
     await page.getByRole("link", { name: "保存した対局を見る" }).click()
     await expect(page.getByText("−55 pt", { exact: false })).toBeVisible()
-    expect(localSQL(`SELECT count(DISTINCT match_id) FROM public.match_results WHERE league_id='${a}' AND user_id='${guests[0]}'`)).toBe("2")
+    expect(localSQL(`SELECT count(*) FILTER (WHERE user_id='${guests[0]}'),
+      count(*) FILTER (WHERE user_id='${owner.id}') FROM public.match_results WHERE league_id='${a}'`)).toBe("1|1")
 
     await test.step("360/390/768/1280 CSS px, 200% text, touch, landscape and visible keyboard focus", async () => {
       const state = await page.context().storageState()

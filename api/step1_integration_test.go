@@ -398,7 +398,7 @@ func TestStep1RealDBAuth(t *testing.T) {
 				t.Error("cleanup Step 5 Auth user")
 			}
 		})
-		testStep5(t, ctx, admin, call, a.Access, other.Access, third.Access, participant, sameName["id"].(string), id)
+		testStep5(t, ctx, db, admin, call, a.Access, other.Access, third.Access, participant, sameName["id"].(string), id)
 	})
 
 	before = fingerprint()
