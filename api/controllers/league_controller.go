@@ -245,7 +245,9 @@ func createdKey(p pageCursor) bool { return timestampKey(p.Key, "infinity") && p
 
 var references = map[string]referenceQuery{
 	"participants": {
-		memberSource + ` AND m.status='active'`,
+		memberSource + ` AND m.status='active'
+		AND NOT EXISTS (SELECT 1 FROM public.participant_links p
+			WHERE p.league_id=m.league_id AND p.guest_user_id=m.user_id AND p.status='active')`,
 		`'id',u.id,'name',u.name,'kind',u.participant_kind,'version',u.version::text`,
 		`u.name COLLATE "C"`, `u.name`, `$4::text COLLATE "C"`, nameKey,
 	},

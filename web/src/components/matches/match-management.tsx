@@ -84,8 +84,9 @@ export function MatchManagement({ match, rules, seasons, participants, detail }:
             </label>
             {match.results.map((row, i) => (
               <div key={row.user_id} className="grid min-w-0 gap-2 sm:grid-cols-2">
-                <label className="grid min-w-0 gap-1">参加者 {i + 1}<select name={`player-${i}`} defaultValue={participants.some((p) => p.id === row.user_id) ? row.user_id : ""} required className={field}>
-                  <option value="">{row.display_name} の代わりを選択</option>
+                <label className="grid min-w-0 gap-1">参加者 {i + 1}<select name={`player-${i}`} defaultValue={row.user_id} required className={field}>
+                  {!participants.some((p) => p.id === row.user_id) &&
+                    <option value={row.user_id}>{row.display_name}（記録済みの参加者）</option>}
                   {participants.map((p) => <option key={p.id} value={p.id}>{participantLabel(p, participants)}</option>)}
                 </select></label>
                 <label className="grid min-w-0 gap-1">素点 {i + 1}（点）

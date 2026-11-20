@@ -89,7 +89,7 @@ func (lc *LeagueController) CalculateMatch() gin.HandlerFunc {
 		if !httpx.Decode(c, &input) || !normalizeScores(c, &input.RuleID, input.Players) {
 			return nil
 		}
-		results := calculateMatch(c, ctx, tx, l.ID, input.RuleID, input.Players, false, "")
+		results := calculateMatch(c, ctx, tx, l.ID, input.RuleID, input.Players, false, "", "")
 		if results == nil {
 			return nil
 		}
@@ -97,7 +97,7 @@ func (lc *LeagueController) CalculateMatch() gin.HandlerFunc {
 	})
 }
 
-func calculateMatch(c *gin.Context, ctx context.Context, tx *sql.Tx, leagueID, ruleID string, players []scoreInput, lock bool, retainedRule string) []matchResult {
+func calculateMatch(c *gin.Context, ctx context.Context, tx *sql.Tx, leagueID, ruleID string, players []scoreInput, lock bool, retainedRule, correctingMatch string) []matchResult {
 	var rule scoringRule
 	ruleQuery := `SELECT default_points,return_points,uma_1,uma_2,uma_3,uma_4,available
 		FROM public.rules WHERE league_id=$1 AND id=$2 AND calculation_version='exact_v1'`
@@ -126,11 +126,13 @@ func calculateMatch(c *gin.Context, ctx context.Context, tx *sql.Tx, leagueID, r
 		return nil
 	}
 
-	memberQuery := `SELECT COALESCE(p.registered_user_id,u.id),COALESCE(person.name,u.name)
+	memberQuery := `SELECT COALESCE(p.registered_user_id,u.id),COALESCE(person.name,u.name),r.user_id IS NOT NULL
 		FROM public.league_members m JOIN public.users u ON u.id=m.user_id
 		LEFT JOIN public.participant_links p ON p.league_id=m.league_id AND p.guest_user_id=m.user_id AND p.status='active'
 		LEFT JOIN public.users person ON person.id=p.registered_user_id
-		WHERE m.league_id=$1 AND m.user_id=$2 AND m.status='active'
+		LEFT JOIN public.match_results r ON r.league_id=m.league_id AND r.user_id=m.user_id AND r.match_id=NULLIF($3,'')::uuid
+		WHERE m.league_id=$1 AND m.user_id=$2
+		AND (m.status='active' OR (r.user_id IS NOT NULL AND m.status IN ('left','removed')))
 		AND m.participant_kind IN ('guest','registered')`
 	if lock {
 		memberQuery += " FOR SHARE OF m"
@@ -140,13 +142,17 @@ func calculateMatch(c *gin.Context, ctx context.Context, tx *sql.Tx, leagueID, r
 	for i, p := range players {
 		r := &results[i]
 		r.UserID, r.Score = p.UserID, *p.Score
-		err := tx.QueryRowContext(ctx, memberQuery, leagueID, p.UserID).Scan(&r.CanonicalID, &r.DisplayName)
+		var retained bool
+		err := tx.QueryRowContext(ctx, memberQuery, leagueID, p.UserID, correctingMatch).Scan(&r.CanonicalID, &r.DisplayName, &retained)
 		switch {
 		case errors.Is(err, sql.ErrNoRows):
 			httpx.Error(c, 404, "NOT_FOUND", "このリーグで有効な参加者が見つかりません", nil)
 			return nil
 		case err != nil:
 			httpx.Unavailable(c)
+			return nil
+		case !retained && r.CanonicalID != r.UserID:
+			stateConflict(c, "本人に紐付いたゲストです。本人の参加者を選択してください")
 			return nil
 		case seen[r.CanonicalID]:
 			httpx.Error(c, 409, "STATE_CONFLICT", "本人が同じ参加者が含まれています", nil)
@@ -254,7 +260,7 @@ func (w *LeagueWrite) SaveMatch(c *gin.Context) {
 		if input.SeasonID != nil && !matchInSeason(c, ctx, tx, l.ID, *input.SeasonID, date) {
 			return 0, nil
 		}
-		results := calculateMatch(c, ctx, tx, l.ID, input.RuleID, input.Players, true, "")
+		results := calculateMatch(c, ctx, tx, l.ID, input.RuleID, input.Players, true, "", "")
 		if results == nil {
 			return 0, nil
 		}

@@ -319,12 +319,30 @@ func testLeagueMatches(t *testing.T, ctx context.Context, admin *sql.DB, call ap
 	verify("POST", root+"/participant-links/"+memberLink+"/reject", ownerToken, review(), 200, "")
 	verify("POST", root+"/participant-links", ownerToken,
 		map[string]string{"guest_user_id": foreign, "client_request_id": uid()}, 404, "NOT_FOUND")
+	options := verify("GET", root+"/participants", memberToken, nil, 200, "")["participants"].([]any)
+	var foundOwner bool
+	for _, option := range options {
+		id := option.(map[string]any)["id"]
+		if id == g1 {
+			t.Fatal("linked guest is still selectable by another member")
+		}
+		foundOwner = foundOwner || id == owner
+	}
+	if !foundOwner {
+		t.Fatal("registered participant is missing")
+	}
 	history := verify("GET", root+"/matches/"+firstID, memberToken, nil, 200, "")
 	for _, player := range history["results"].([]any) {
 		p := player.(map[string]any)
 		if p["user_id"] == g1 && p["canonical_user_id"] != owner {
 			t.Fatal("linked result must retain origin and resolve registered identity")
 		}
+	}
+	beforeRejectedSave := counts()
+	verify("POST", root+"/matches/calculate", memberToken, map[string]any{"rule_id": f.rule, "players": makePlayers(ids, scores)}, 409, "STATE_CONFLICT")
+	verify("POST", root+"/matches", memberToken, save("2024-11-01T00:00:00+09:00", nil, makePlayers(ids, scores)), 409, "STATE_CONFLICT")
+	if replay := verify("POST", root+"/matches", memberToken, unassigned, 200, ""); replay["id"] != x.body["id"] || counts() != beforeRejectedSave {
+		t.Fatal("linking must preserve committed save replay and reject new writes")
 	}
 	verify("POST", root+"/matches", ownerToken,
 		save("2024-11-01T00:00:00+09:00", nil, makePlayers([]string{g1, owner, g3, g4}, scores)), 409, "STATE_CONFLICT")

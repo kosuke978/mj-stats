@@ -16,8 +16,7 @@ export function ParticipantLinks({ league, participants, initial }: { league: Le
   const [note, setNote] = useState("")
   const [notice, setNotice] = useState("")
   const endpoint = `/api/leagues/${league.id}/participant-links`
-  const guests = participants.filter((p) => p.kind === "guest" &&
-    !initial.some((item) => item.guest_user_id === p.id && item.status === "active"))
+  const guests = participants.filter((p) => p.kind === "guest")
   const disabled = action.busy || action.retry
 
   async function submit(kind?: "request" | "approve" | "reject" | "revoke", link?: ParticipantLink) {

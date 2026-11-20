@@ -5,7 +5,7 @@ import { AppLink, navLink } from "@/components/navigation/app-link"
 import { referencePages } from "@/lib/auth/reference-pages"
 import { serverAPI } from "@/lib/auth/server"
 import { leagueHistory, leagueHome } from "@/lib/leagues/paths"
-import type { League, MatchRule, Participant, ParticipantLink, Season } from "@/types/match"
+import type { League, MatchRule, Participant, Season } from "@/types/match"
 
 export default async function SettingsPage({ params }: { params: Promise<{ league_id: string }> }) {
   const { league_id } = await params
@@ -21,7 +21,6 @@ export default async function SettingsPage({ params }: { params: Promise<{ leagu
       referencePages<MatchRule>(api, "rules", path, { available: "all" }),
       referencePages<Season>(api, "seasons", path),
       referencePages<Participant>(api, "participants", path),
-      referencePages<ParticipantLink>(api, "participant-links", path),
       serverAPI<{ owner_transfer: OwnerTransfer | null }>(`${api}/owner-transfers/current`, path),
     ])
     return { settings, data }
@@ -30,8 +29,7 @@ export default async function SettingsPage({ params }: { params: Promise<{ leagu
   if (result.error) {
     content = <LeaguePageError error={result.error} path={path} back={home} />
   } else {
-    const { settings, data: [{ league }, members, rules, seasons, participants, links, transfer] } = result.data
-    const linked = new Set(links.filter((l) => l.status === "active").map((l) => l.guest_user_id))
+    const { settings, data: [{ league }, members, rules, seasons, participants, transfer] } = result.data
     content = <>
       <nav aria-label="リーグ設定の関連ページ" className="flex flex-wrap gap-2">
         <AppLink className={navLink} href={home}>リーグホーム</AppLink>
@@ -40,7 +38,7 @@ export default async function SettingsPage({ params }: { params: Promise<{ leagu
         <AppLink className={navLink} href={`${path}/events`}>操作記録</AppLink>
       </nav>
       <LeagueSettings league={league} settings={settings} members={members} rules={rules} seasons={seasons}
-        guests={participants.filter((p) => p.kind === "guest" && !linked.has(p.id))} transfer={transfer.owner_transfer} />
+        guests={participants.filter((p) => p.kind === "guest")} transfer={transfer.owner_transfer} />
     </>
   }
   return <main className="mx-auto w-full max-w-2xl space-y-5 px-4 py-6">
