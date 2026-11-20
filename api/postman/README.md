@@ -29,6 +29,7 @@ Search Leaguesは掲載名だけを検索し、Resolve League Numberは非掲載
 2. Rulesの利用可能な `rule_id` と、Participantsから異なる4人の `player_1_id`〜`player_4_id` を設定し、Calculate League Matchを実行します。33,300 / 33,300 / 33,300 / 100点の例では、標準ルールで1位3人が各499/30ptです。
 3. Save League Matchの操作IDを新しくし、対局日時（オフセット付き）、必要なら同じリーグのシーズンUUIDを設定します。例の `null` は未指定です。応答の `id` を `match_id` に設定し、League Match DetailとGet Matchesを確認します。再送は同じ操作ID・同じ内容を送ります。
 4. 紐付けを申請する本人のBearerと `guest_user_id` でRequest Participant Linkを実行します。List Participant Linksで申請IDと版を取得します。運営者のBearerで `link_id`、`link_version`、新しい操作ID、確認内容を指定し、ApproveまたはReject Participant Linkを実行します。
+5. 承認後、Participantsには有効所属の本人が表示され、紐付け済みゲストは新規候補から外れます。旧ゲストIDの新規計算・保存は409。保存済みの同一操作を再送し、同じ対局IDと現在の状態が返ることを確認します。
 
 ## 順位表と管理
 
@@ -36,5 +37,7 @@ Search Leaguesは掲載名だけを検索し、Resolve League Numberは非掲載
 2. League Settings、Members、Rules、Seasonsで現在の版を取得してから管理操作を送ります。メンバー操作では `target_user_id`、引継ぎでは提案後の `transfer_id`、シーズン変更では `season_id` を指定します。指名と同意は別の本人のBearerで実行します。
 3. 本人対応を解除するときはList Participant Linksの `link_id` と `link_version` を指定し、ownerのBearerでRevoke Participant Linkを実行します。League Eventsと順位表で変更を確認します。
 4. 新しい操作は新しいUUIDを使い、再送は同じ操作ID・同じ本文で送ります。操作ID再利用や版競合は409。運営権限があるリーグとmemberのリーグを切り替えて403を照合します。
+
+Update League Settingsは `PATCH /api/leagues/{league_id}/settings` です。Update Seasonの例は名前だけを送信し、両方の日付を維持します。期間を更新する場合、値を送った境界だけが変わり、明示した `null` でその境界を解除します。使用済み期間の変更・解除は409です。同じ操作IDの本文で日付の省略をnullに変えた場合も409になります。
 
 v1のコレクションは当時の契約の記録です。
