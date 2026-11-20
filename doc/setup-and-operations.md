@@ -211,6 +211,20 @@ migration試験は環境を識別してから使い捨てDBを作る。空DB全�
 
 ローカルでの検証は `node scripts/test-migrations.mjs`、保存済みコピーでは `node scripts/test-migrations.mjs --snapshot .local/legacy-actual-20261117.json`。専用ローカルで `MJSTATS_INTEGRATION=1 go -C api test -count=1 -v -run '^TestStep1RealDBAuth$' .` を実行し、本番モードのWebとGoを立ち上げて `cd web && npm run test:browser` を実行する。招待の短時間連続照合を含むブラウザfixtureでは、試験プロセスの上限を広げて実行できる。既定相当の制限および429はGoの招待・参加統合試験で確認する。証跡は [Step 3受入](quality-and-acceptance.md#step-3の受入) を参照する。
 
+## Step 5の切替と復旧
+
+専用ローカルは `mj-stats-step1`（DB 55422、Auth 55421）。作業前に対象のproject label、未link、バックアップ、直前までの12版を確認する。次の4本を古い順に適用する。
+
+1. `20261119000000_match_management.sql` で変更履歴と対局の版遷移制約を追加する。
+2. `20261119001000_league_management.sql` で管理監査、owner引継ぎ、本人紐付け解除を追加する。
+3. `20261119002000_ranking.sql` でapp結果の分母と順位表の索引を追加する。
+4. `20261119003000_rule_recording_lock.sql` でmemberによる新規記録とルール利用停止がロックで順序付くことを維持する。
+
+適用前に書込みを停止する。専用ローカルでは `npm run supabase -- migration up --local` を使い、再実行時の適用0件を確認する。空DBと保存済み実コピーへの順序・値・ID・参照の照合は `node scripts/test-migrations.mjs` と `node scripts/test-migrations.mjs --snapshot .local/legacy-actual-20261117.json` で実施する。本番モードのGoを先に起動し、認可・新規記録・訂正・取消・順位表に続けてWebを確認する。[専用ローカルの起動手順](#step-1の専用ローカル環境)に従い、招待鍵・試行制限鍵はローカル用を設定する。
+
+障害時は管理書込みと影響範囲の対局記録を止める。取消済み対局、理由・前後、操作ID、所属・本人対応を保持し、互換性のある修正版を適用する。DB復元が必要なら直前バックアップと書込み停止までの差分を隔離先へ取り、監査・4結果・分数・owner参照・版・再送を照合する。データの切戻しは照合と開発者判断を経て行う。公開前の実環境受入は[実設定の確認](#実設定の確認と公開前の条件)を参照する。
+
+
 ## 起動
 
 DBのスキーマと必要データ、環境変数を準備してから、別ターミナルで起動する。

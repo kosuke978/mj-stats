@@ -1,0 +1,37 @@
+$kind: http-request
+description: "運営のみ。元ID・作成日時・記録者を維持し同じ操作の再送は元の適用版を返す。"
+url: "{{base_url}}/api/leagues/{{league_id}}/matches/{{match_id}}"
+method: PATCH
+headers:
+  Authorization: "Bearer {{access_token}}"
+  Content-Type: application/json
+body:
+  type: json
+  content: |
+    {
+      "client_request_id": "{{client_request_id}}",
+      "version": "{{object_version}}",
+      "reason": "隔離環境で変更内容を確認",
+      "rule_id": "{{rule_id}}",
+      "season_id": null,
+      "match_date": "2024-11-01T09:00:00+09:00",
+      "players": [
+        {
+          "user_id": "{{player_1_id}}",
+          "raw_score": 35000
+        },
+        {
+          "user_id": "{{player_2_id}}",
+          "raw_score": 35000
+        },
+        {
+          "user_id": "{{player_3_id}}",
+          "raw_score": 20000
+        },
+        {
+          "user_id": "{{player_4_id}}",
+          "raw_score": 10000
+        }
+      ]
+    }
+order: 34000

@@ -1,0 +1,7 @@
+$kind: http-request
+description: "運営のみ。現在のリーグ名・掲載状態・版。"
+url: "{{base_url}}/api/leagues/{{league_id}}/settings"
+method: GET
+headers:
+  Authorization: "Bearer {{access_token}}"
+order: 37000

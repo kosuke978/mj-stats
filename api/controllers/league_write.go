@@ -21,6 +21,10 @@ type leagueWriteAction func(context.Context, *sql.Tx, league, string) (int, any)
 // All membership, participant link and match writers take the league lock
 // before reading the affected memberships/links. Join already uses this row.
 func (w *LeagueWrite) run(c *gin.Context, manager bool, action leagueWriteAction) {
+	w.runMembership(c, manager, false, action)
+}
+
+func (w *LeagueWrite) runMembership(c *gin.Context, manager, allowFormer bool, action leagueWriteAction) {
 	id := strings.ToLower(pathLeague(c))
 	if !uuidPattern.MatchString(id) {
 		invalidQuery(c, "league_id")
@@ -36,7 +40,8 @@ func (w *LeagueWrite) run(c *gin.Context, manager bool, action leagueWriteAction
 
 	actor := c.GetString("participant_id")
 	var l league
-	err = tx.QueryRowContext(ctx, myLeagues+` AND l.id=$2`, actor, id).
+	err = tx.QueryRowContext(ctx, registeredLeagues+` AND l.id=$2
+		AND (m.status='active' OR ($3 AND m.status IN ('left','removed')))`, actor, id, allowFormer).
 		Scan(&l.ID, &l.Name, &l.GroupNumber, &l.MyRole)
 	if errors.Is(err, sql.ErrNoRows) {
 		httpx.Error(c, 403, "LEAGUE_ACCESS_DENIED", "このリーグには記録できません", nil)
@@ -46,7 +51,7 @@ func (w *LeagueWrite) run(c *gin.Context, manager bool, action leagueWriteAction
 		httpx.Unavailable(c)
 		return
 	}
-	if manager && l.MyRole == "member" {
+	if manager && !managerRole(l.MyRole) {
 		httpx.Error(c, 403, "FORBIDDEN", "リーグ運営者の権限が必要です", nil)
 		return
 	}
@@ -57,8 +62,8 @@ func (w *LeagueWrite) run(c *gin.Context, manager bool, action leagueWriteAction
 	}
 	if err == nil {
 		err = tx.QueryRowContext(ctx, `SELECT role FROM public.league_members
-			WHERE league_id=$1 AND user_id=$2 AND participant_kind='registered' AND status='active'
-			FOR SHARE`, id, actor).Scan(&l.MyRole)
+			WHERE league_id=$1 AND user_id=$2 AND participant_kind='registered' AND (status='active' OR ($3 AND status IN ('left','removed')))
+			AND role IN ('owner','admin','member') FOR SHARE`, id, actor, allowFormer).Scan(&l.MyRole)
 	}
 	switch {
 	case errors.Is(err, sql.ErrNoRows):
@@ -67,7 +72,7 @@ func (w *LeagueWrite) run(c *gin.Context, manager bool, action leagueWriteAction
 	case err != nil:
 		httpx.Unavailable(c)
 		return
-	case manager && l.MyRole == "member":
+	case manager && !managerRole(l.MyRole):
 		httpx.Error(c, 403, "FORBIDDEN", "リーグ運営者の権限が必要です", nil)
 		return
 	}

@@ -1,15 +1,17 @@
+import { MembershipActions, type OwnerTransfer } from "@/components/leagues/league-management-forms"
 import { AppLink, navLink } from '@/components/navigation/app-link'
-import { leagueRoles } from '@/components/navigation/league-directory'
 import { LeagueNavigation } from '@/components/navigation/navigation'
 import { APIError } from '@/lib/auth/api'
-import { serverAPI } from '@/lib/auth/server'
-import { leagueHistory, leagueHome } from '@/lib/leagues/paths'
+import { requireViewer, serverAPI } from '@/lib/auth/server'
+import { leagueHistory, leagueHome, leagueRoles } from '@/lib/leagues/paths'
 import type { League } from '@/types/match'
 
 export default async function LeagueHomePage({ params }: { params: Promise<{ league_id: string }> }) {
   const { league_id } = await params
   const path = leagueHome(league_id)
   let league: League
+  let transfer: OwnerTransfer | null = null
+  let transferUnavailable = false
   try {
     const result = await serverAPI<{ league: League }>(`/api${path}`, path)
     league = result.league
@@ -28,6 +30,14 @@ export default async function LeagueHomePage({ params }: { params: Promise<{ lea
   }
 
   const history = leagueHistory(league.id)
+  const { viewer } = await requireViewer(path)
+  try {
+    const result = await serverAPI<{ owner_transfer: OwnerTransfer | null }>(`/api${path}/owner-transfers/current`, path)
+    transfer = result.owner_transfer
+  } catch (error) {
+    if (!(error instanceof APIError || error instanceof TypeError)) throw error
+    transferUnavailable = true
+  }
   return (
     <main className="mx-auto w-full max-w-2xl space-y-5 px-4 py-6">
       <header className="space-y-2">
@@ -39,9 +49,12 @@ export default async function LeagueHomePage({ params }: { params: Promise<{ lea
       </header>
       <LeagueNavigation id={league.id} active="home" />
       <ul className="border-t pt-3 text-sm">
+        {league.my_role !== 'member' && <li><AppLink className={navLink} href={`${path}/settings`}>リーグ設定</AppLink></li>}
         {league.my_role !== 'member' && <li><AppLink className={navLink} href={`${history}/invites`}>招待を管理</AppLink></li>}
         <li><AppLink className={navLink} href={`${history}/participant-links`}>ゲストの本人紐付け</AppLink></li>
       </ul>
+      {transferUnavailable && <p role="alert" className="text-sm">引継ぎの状態を取得できませんでした。再読込してください。</p>}
+      <MembershipActions endpoint={`/api${path}`} viewerID={viewer.id} owner={league.my_role === "owner"} transfer={transfer} />
     </main>
   )
 }

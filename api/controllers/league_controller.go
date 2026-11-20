@@ -29,11 +29,13 @@ type league struct {
 var uuidPattern = regexp.MustCompile(`^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$`)
 var limitPattern = regexp.MustCompile(`^[0-9]{1,3}$`)
 
-const myLeagues = `
+const registeredLeagues = `
 	SELECT l.id, l.name, l.group_number, m.role
 	FROM public.leagues l JOIN public.league_members m ON m.league_id=l.id
-	WHERE m.user_id=$1 AND m.status='active' AND m.participant_kind='registered'
-	  AND l.group_number IS NOT NULL`
+	WHERE m.user_id=$1 AND m.participant_kind='registered'
+	  AND l.group_number IS NOT NULL AND m.role IN ('owner','admin','member')`
+
+const myLeagues = registeredLeagues + ` AND m.status='active'`
 
 func (lc *LeagueController) List(c *gin.Context) {
 	ctx, cancel := context.WithTimeout(c.Request.Context(), 5*time.Second)
@@ -90,7 +92,7 @@ func (lc *LeagueController) scoped(id func(*gin.Context) string, read leagueRead
 			httpx.Unavailable(c)
 			return
 		}
-		if _, err := tx.ExecContext(ctx, `SELECT set_config('mjstats.league_id',$1,true)`, l.ID); err != nil {
+		if _, err := tx.ExecContext(ctx, `SELECT set_config('mjstats.league_id',$1,true), set_config('mjstats.league_actor_id',$2,true)`, l.ID, c.GetString("participant_id")); err != nil {
 			httpx.Unavailable(c)
 			return
 		}

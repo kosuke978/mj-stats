@@ -6,7 +6,7 @@ import { clientAPI } from '@/lib/auth/client-api'
 import { useViewer } from '@/components/auth/viewer-provider'
 
 export type LeagueSummary = { id: string; name: string; group_number: string }
-export type Post = { path: string; body: Record<string, string> }
+export type Post = { path: string; method?: 'POST' | 'PATCH'; body: Record<string, unknown> }
 
 export function leagueMessage(error: unknown) {
   if (error instanceof APIError) {
@@ -36,7 +36,7 @@ export function useLeagueAction() {
     setMessage('')
     try {
       const result = await clientAPI<T>(post.path, {
-        method: 'POST',
+        method: post.method ?? 'POST',
         body: JSON.stringify(post.body),
       }, subject)
       pending.current = null

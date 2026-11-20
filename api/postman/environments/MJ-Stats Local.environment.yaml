@@ -56,3 +56,15 @@ values:
   - key: player_4_id
     value: ""
     enabled: true
+  - key: object_version
+    value: ""
+    enabled: true
+  - key: target_user_id
+    value: ""
+    enabled: true
+  - key: transfer_id
+    value: ""
+    enabled: true
+  - key: season_id
+    value: ""
+    enabled: true

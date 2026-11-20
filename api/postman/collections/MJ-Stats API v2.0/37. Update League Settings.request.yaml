@@ -1,0 +1,17 @@
+$kind: http-request
+description: "運営のみ。名前と掲載を更新。"
+url: "{{base_url}}/api/leagues/{{league_id}}/settings"
+method: PATCH
+headers:
+  Authorization: "Bearer {{access_token}}"
+  Content-Type: application/json
+body:
+  type: json
+  content: |
+    {
+      "client_request_id": "{{client_request_id}}",
+      "version": "{{object_version}}",
+      "name": "隔離リーグ",
+      "search_listed": true
+    }
+order: 38000

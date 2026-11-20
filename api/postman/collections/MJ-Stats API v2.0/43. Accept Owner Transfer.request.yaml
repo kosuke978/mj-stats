@@ -1,0 +1,15 @@
+$kind: http-request
+description: "指名本人の同意。ownerと2人のroleが一括更新される。"
+url: "{{base_url}}/api/leagues/{{league_id}}/owner-transfers/{{transfer_id}}/accept"
+method: POST
+headers:
+  Authorization: "Bearer {{access_token}}"
+  Content-Type: application/json
+body:
+  type: json
+  content: |
+    {
+      "client_request_id": "{{client_request_id}}",
+      "version": "{{object_version}}"
+    }
+order: 44000

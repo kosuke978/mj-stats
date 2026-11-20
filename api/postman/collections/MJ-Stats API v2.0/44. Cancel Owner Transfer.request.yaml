@@ -1,0 +1,15 @@
+$kind: http-request
+description: "現ownerのみ。保留中の指名を取り消す。"
+url: "{{base_url}}/api/leagues/{{league_id}}/owner-transfers/{{transfer_id}}/cancel"
+method: POST
+headers:
+  Authorization: "Bearer {{access_token}}"
+  Content-Type: application/json
+body:
+  type: json
+  content: |
+    {
+      "client_request_id": "{{client_request_id}}",
+      "version": "{{object_version}}"
+    }
+order: 45000

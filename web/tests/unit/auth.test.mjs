@@ -59,6 +59,19 @@ test('only a UUID league history pathname can survive a login redirect', () => {
   assert.equal(safeReturnTo('/matches/league/not-a-uuid'), '/')
 })
 
+test('Step 5 return paths match the protected routes', () => {
+  const id = '71d00000-0000-4000-8000-000000000001'
+  const match = '71d00000-0000-4000-8000-000000000002'
+  for (const path of [
+    `/leagues/${id}/ranking`, `/leagues/${id}/settings`, `/leagues/${id}/settings/events`,
+    `/matches/league/${id}/${match}/edit`, `/matches/league/${id}/${match}/revisions`,
+  ]) {
+    assert.equal(safeReturnTo(path), path)
+    assert.equal(safeReturnTo(path + '?x=1'), '/')
+    assert.equal(safeReturnTo(path + '/extra'), '/')
+  }
+})
+
 test('join return destination carries only the twelve-digit path', () => {
   const path = '/join/000100200300'
   assert.equal(safeReturnTo(path), path)

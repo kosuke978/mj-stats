@@ -1,0 +1,16 @@
+$kind: http-request
+description: "運営のみ。未紐付けゲストのみ。"
+url: "{{base_url}}/api/leagues/{{league_id}}/guests/{{guest_user_id}}"
+method: PATCH
+headers:
+  Authorization: "Bearer {{access_token}}"
+  Content-Type: application/json
+body:
+  type: json
+  content: |
+    {
+      "client_request_id": "{{client_request_id}}",
+      "version": "{{object_version}}",
+      "name": "更新したゲスト"
+    }
+order: 50000

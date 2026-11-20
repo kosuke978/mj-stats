@@ -89,7 +89,7 @@ func (lc *LeagueController) CalculateMatch() gin.HandlerFunc {
 		if !httpx.Decode(c, &input) || !normalizeScores(c, &input.RuleID, input.Players) {
 			return nil
 		}
-		results := calculateMatch(c, ctx, tx, l.ID, input.RuleID, input.Players, false)
+		results := calculateMatch(c, ctx, tx, l.ID, input.RuleID, input.Players, false, "")
 		if results == nil {
 			return nil
 		}
@@ -97,7 +97,7 @@ func (lc *LeagueController) CalculateMatch() gin.HandlerFunc {
 	})
 }
 
-func calculateMatch(c *gin.Context, ctx context.Context, tx *sql.Tx, leagueID, ruleID string, players []scoreInput, lock bool) []matchResult {
+func calculateMatch(c *gin.Context, ctx context.Context, tx *sql.Tx, leagueID, ruleID string, players []scoreInput, lock bool, retainedRule string) []matchResult {
 	var rule scoringRule
 	ruleQuery := `SELECT default_points,return_points,uma_1,uma_2,uma_3,uma_4,available
 		FROM public.rules WHERE league_id=$1 AND id=$2 AND calculation_version='exact_v1'`
@@ -113,7 +113,7 @@ func calculateMatch(c *gin.Context, ctx context.Context, tx *sql.Tx, leagueID, r
 	case err != nil:
 		httpx.Unavailable(c)
 		return nil
-	case !rule.Available:
+	case !rule.Available && ruleID != retainedRule:
 		httpx.Error(c, 409, "STATE_CONFLICT", "このルールは利用を停止しています", nil)
 		return nil
 	}
@@ -190,29 +190,40 @@ func scoreResults(rule scoringRule, results []matchResult) {
 
 var matchDatePattern = regexp.MustCompile(`^[0-9]{4}-[0-9]{2}-[0-9]{2}T([01][0-9]|2[0-3]):[0-5][0-9]:[0-5][0-9](\.[0-9]{1,6})?(Z|[+-]([01][0-9]|2[0-3]):[0-5][0-9])$`)
 
-func (w *LeagueWrite) SaveMatch(c *gin.Context) {
-	received := time.Now()
-	var input matchInput
-	if !httpx.Decode(c, &input) || !normalizeScores(c, &input.RuleID, input.Players) {
-		return
+func normalizeMatchInput(c *gin.Context, input *matchInput) (time.Time, bool) {
+	if !normalizeScores(c, &input.RuleID, input.Players) {
+		return time.Time{}, false
 	}
 	date, err := time.Parse(time.RFC3339, input.Date)
 	if err != nil || !matchDatePattern.MatchString(input.Date) || date.Year() < 1 || date.UTC().Year() < 1 {
 		invalidQuery(c, "match_date")
-		return
+		return time.Time{}, false
 	}
 	input.Date = date.UTC().Format(time.RFC3339Nano)
 	if !uuidPattern.MatchString(input.ClientRequestID) {
 		invalidQuery(c, "client_request_id")
-		return
+		return time.Time{}, false
 	}
 	input.ClientRequestID = strings.ToLower(input.ClientRequestID)
 	if input.SeasonID != nil {
 		if !uuidPattern.MatchString(*input.SeasonID) {
 			invalidQuery(c, "season_id")
-			return
+			return time.Time{}, false
 		}
 		*input.SeasonID = strings.ToLower(*input.SeasonID)
+	}
+	return date, true
+}
+
+func (w *LeagueWrite) SaveMatch(c *gin.Context) {
+	received := time.Now()
+	var input matchInput
+	if !httpx.Decode(c, &input) {
+		return
+	}
+	date, ok := normalizeMatchInput(c, &input)
+	if !ok {
+		return
 	}
 	hash := requestHash(input)
 	w.run(c, false, func(ctx context.Context, tx *sql.Tx, l league, actor string) (int, any) {
@@ -243,7 +254,7 @@ func (w *LeagueWrite) SaveMatch(c *gin.Context) {
 		if input.SeasonID != nil && !matchInSeason(c, ctx, tx, l.ID, *input.SeasonID, date) {
 			return 0, nil
 		}
-		results := calculateMatch(c, ctx, tx, l.ID, input.RuleID, input.Players, true)
+		results := calculateMatch(c, ctx, tx, l.ID, input.RuleID, input.Players, true, "")
 		if results == nil {
 			return 0, nil
 		}

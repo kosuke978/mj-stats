@@ -1,12 +1,10 @@
 import { APIError } from '@/lib/auth/api'
 import { serverAPI } from '@/lib/auth/server'
-import { leagueHistory, leagueHome } from '@/lib/leagues/paths'
+import { leagueHistory, leagueHome, leagueRoles } from '@/lib/leagues/paths'
 import type { League } from '@/types/match'
 import { AppLink, navLink } from './app-link'
 import { ResumeLegacyRoute } from './league-selection'
 import { LeagueActions } from './navigation'
-
-export const leagueRoles = { owner: 'オーナー', admin: '管理者', member: 'メンバー' }
 
 export function LeagueDirectoryLoading() {
   return <p role="status" className="rounded-lg border p-4">所属リーグを読み込んでいます…</p>

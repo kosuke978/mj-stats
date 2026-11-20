@@ -1,0 +1,7 @@
+$kind: http-request
+description: "運営のみ。版、理由、操作者、変更前後。"
+url: "{{base_url}}/api/leagues/{{league_id}}/matches/{{match_id}}/revisions?limit=20"
+method: GET
+headers:
+  Authorization: "Bearer {{access_token}}"
+order: 36000

@@ -2,6 +2,27 @@
 
 Step 2は [PR #10](https://github.com/kosuke978/mj-stats/pull/10)、Step 3は [PR #11](https://github.com/kosuke978/mj-stats/pull/11) でマージ済み。各Stepの実行結果は [品質・受入](quality-and-acceptance.md) に記録する。
 
+## Step 5の順位表・管理
+
+D-08/D-14/D-15/D-19を実装。以下のパスは `/api/leagues/{league_id}` 配下。マッチの訂正・取消、メンバー権限・除名・脱退、本人紐付け解除、owner引継ぎ、管理イベントの詳細は[対局・順位表・管理のルート](#対局順位表管理のルート)を参照。
+
+| 追加ルート | 入出力・条件 |
+| --- | --- |
+| GET /settings | 運営のみ。200 `{settings:{id,name,search_listed,version}}` |
+| PATCH /settings | 運営のみ。必須 `name,search_listed,version,client_request_id` |
+| POST /rules | 運営のみ。必須 `name,default_points,return_points,uma,client_request_id`。4ウマは整数・降順・合計0、S/Rは正の100点単位、R≧S。新しいIDで初版を作成 |
+| PATCH /rules/{id} | 運営のみ。必須 `available,version,client_request_id`。計算条件と過去対局への参照を保つ |
+| POST /seasons・PATCH /seasons/{id} | 運営のみ。必須 `name,client_request_id`。開始・終了を `start_date,end_date`（YYYY-MM-DDまたはnull）で設定。PATCHは版が必須。対局の現行版・変更履歴に登場したシーズンの期間は409 |
+| PATCH /guests/{user_id} | 運営のみ。必須 `name,version,client_request_id`。有効な本人対応があるゲストは409 |
+| GET /owner-transfers/current | 200 `{owner_transfer}`。運営または指名本人に未確定の指名を返す。空はnull。期限は日本時間で表示。期限切れは表示上 `expired`、次の指名でDBにも確定 |
+
+- 全書込みは `application/json`。版は10進正整数文字列。訂正・取消の成功は200 `{match_id,applied_version}`。同じリーグ・操作者内で訂正と取消は同じ操作IDの名前空間を使い、新規保存とは独立する。版競合は `VERSION_CONFLICT`、操作ID不一致は `IDEMPOTENCY_CONFLICT`、取消済みの新規変更は `STATE_CONFLICT`。
+- 新しい管理書込みは作成201、更新200、同一内容の再送200で `{id,version}`。操作IDは本人・操作種別で一意。リーグと対象もハッシュに含む。脱退だけは有効な本人の同じ確定済み操作を脱退後に再送できる。
+- 訂正では現在有効な参加者を4人選ぶ。利用停止ルールは元の対局の適用ルールとしてのみ再利用可能。現在のルール、保存済みの正確値、対局ID・作成時刻・記録者を変更履歴と照合できる。取消では結果を保持する。
+- 順位表の `entries` に `rank,user_id,display_name,kind,membership_status,total_point,match_count` を返す。成績のあるゲストと脱退・除名済み参加者を含む。現在有効な紐付けは本人IDに集約する。
+- `GET /events` と `GET /matches/{id}/revisions` は運営のみ。ID・操作者・時刻・操作・版・理由・変更前後を返す。カーソルは本人・リーグ・一覧・対象に紐付く。招待の秘密値、リクエストハッシュ、Auth情報は公開レスポンスに含めない。
+- Webの順位表・設定は `/leagues/{id}/ranking` と `/leagues/{id}/settings`。設定に招待・本人紐付け・操作記録へのリンクがある。既存の対局詳細配下 `/matches/league/{id}/{match_id}/edit` と `/revisions` を運営向けに追加。指名への同意と脱退はリーグホーム。管理送信の結果不明時は同じ画面から同じ操作を再送できる。
+
 ## Step 4のホームと復帰
 
 ログイン後の入口は `/`。所属リーグの名前・役割・グループ番号を表示し、選択先の `/leagues/{league_id}` から対局入力と履歴を開く。作成、名前検索と番号入力による参加は既存画面を使い、作成・明示参加の成功後はリーグホームへ進む。履歴は0件なら記録へのリンク、取得失敗なら再試行、所属拒否ならホームと参加へのリンクを表示する。履歴から対局詳細を開き、詳細から同じリーグの履歴へ戻れる。Goの所属認可が成功したページだけがリーグ内のナビを表示する。

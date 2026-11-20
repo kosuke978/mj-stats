@@ -1,0 +1,7 @@
+$kind: http-request
+description: "運営のみ。操作履歴、理由と変更前後。"
+url: "{{base_url}}/api/leagues/{{league_id}}/events?limit=20"
+method: GET
+headers:
+  Authorization: "Bearer {{access_token}}"
+order: 52000

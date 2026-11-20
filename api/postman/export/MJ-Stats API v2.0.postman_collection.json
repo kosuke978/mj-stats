@@ -1,7 +1,7 @@
 {
   "info": {
     "name": "MJ-Stats API v2.0",
-    "description": "Step 3のリーグ別ゲスト・計算・保存・詳細と、認証・所属・招待・履歴。",
+    "description": "Step 5の順位表・対局管理・リーグ設定と、認証・所属・招待・記録。",
     "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
   },
   "item": [
@@ -548,6 +548,501 @@
             }
           }
         }
+      },
+      "response": []
+    },
+    {
+      "name": "32. Ranking",
+      "request": {
+        "method": "GET",
+        "header": [
+          {
+            "key": "Authorization",
+            "value": "Bearer {{access_token}}"
+          }
+        ],
+        "url": "{{base_url}}/api/leagues/{{league_id}}/ranking?season=all",
+        "description": "所属者限定。all、unassigned、シーズンUUID。保存済み分数と対局数を返す。"
+      },
+      "response": []
+    },
+    {
+      "name": "33. Correct Match",
+      "request": {
+        "method": "PATCH",
+        "header": [
+          {
+            "key": "Authorization",
+            "value": "Bearer {{access_token}}"
+          },
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "url": "{{base_url}}/api/leagues/{{league_id}}/matches/{{match_id}}",
+        "description": "運営のみ。元ID・作成日時・記録者を維持し同じ操作の再送は元の適用版を返す。",
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"client_request_id\": \"{{client_request_id}}\",\n  \"version\": \"{{object_version}}\",\n  \"reason\": \"隔離環境で変更内容を確認\",\n  \"rule_id\": \"{{rule_id}}\",\n  \"season_id\": null,\n  \"match_date\": \"2024-11-01T09:00:00+09:00\",\n  \"players\": [\n    {\n      \"user_id\": \"{{player_1_id}}\",\n      \"raw_score\": 35000\n    },\n    {\n      \"user_id\": \"{{player_2_id}}\",\n      \"raw_score\": 35000\n    },\n    {\n      \"user_id\": \"{{player_3_id}}\",\n      \"raw_score\": 20000\n    },\n    {\n      \"user_id\": \"{{player_4_id}}\",\n      \"raw_score\": 10000\n    }\n  ]\n}",
+          "options": {
+            "raw": {
+              "language": "json"
+            }
+          }
+        }
+      },
+      "response": []
+    },
+    {
+      "name": "34. Cancel Match",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Authorization",
+            "value": "Bearer {{access_token}}"
+          },
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "url": "{{base_url}}/api/leagues/{{league_id}}/matches/{{match_id}}/cancel",
+        "description": "運営のみ。取消理由を記録。結果は保持し、順位表の合計pt・対局数から外す。",
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"client_request_id\": \"{{client_request_id}}\",\n  \"version\": \"{{object_version}}\",\n  \"reason\": \"隔離環境で変更内容を確認\"\n}",
+          "options": {
+            "raw": {
+              "language": "json"
+            }
+          }
+        }
+      },
+      "response": []
+    },
+    {
+      "name": "35. Match Revisions",
+      "request": {
+        "method": "GET",
+        "header": [
+          {
+            "key": "Authorization",
+            "value": "Bearer {{access_token}}"
+          }
+        ],
+        "url": "{{base_url}}/api/leagues/{{league_id}}/matches/{{match_id}}/revisions?limit=20",
+        "description": "運営のみ。版、理由、操作者、変更前後。"
+      },
+      "response": []
+    },
+    {
+      "name": "36. League Settings",
+      "request": {
+        "method": "GET",
+        "header": [
+          {
+            "key": "Authorization",
+            "value": "Bearer {{access_token}}"
+          }
+        ],
+        "url": "{{base_url}}/api/leagues/{{league_id}}/settings",
+        "description": "運営のみ。現在のリーグ名・掲載状態・版。"
+      },
+      "response": []
+    },
+    {
+      "name": "37. Update League Settings",
+      "request": {
+        "method": "PATCH",
+        "header": [
+          {
+            "key": "Authorization",
+            "value": "Bearer {{access_token}}"
+          },
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "url": "{{base_url}}/api/leagues/{{league_id}}/settings",
+        "description": "運営のみ。名前と掲載を更新。",
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"client_request_id\": \"{{client_request_id}}\",\n  \"version\": \"{{object_version}}\",\n  \"name\": \"隔離リーグ\",\n  \"search_listed\": true\n}",
+          "options": {
+            "raw": {
+              "language": "json"
+            }
+          }
+        }
+      },
+      "response": []
+    },
+    {
+      "name": "38. Change Member Role",
+      "request": {
+        "method": "PATCH",
+        "header": [
+          {
+            "key": "Authorization",
+            "value": "Bearer {{access_token}}"
+          },
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "url": "{{base_url}}/api/leagues/{{league_id}}/members/{{target_user_id}}",
+        "description": "ownerのみ。対象は有効なadmin/member。",
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"client_request_id\": \"{{client_request_id}}\",\n  \"version\": \"{{object_version}}\",\n  \"role\": \"admin\"\n}",
+          "options": {
+            "raw": {
+              "language": "json"
+            }
+          }
+        }
+      },
+      "response": []
+    },
+    {
+      "name": "39. Remove Member",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Authorization",
+            "value": "Bearer {{access_token}}"
+          },
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "url": "{{base_url}}/api/leagues/{{league_id}}/members/{{target_user_id}}/remove",
+        "description": "ownerまたはmemberを除名するadmin。記録は保持。",
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"client_request_id\": \"{{client_request_id}}\",\n  \"version\": \"{{object_version}}\",\n  \"reason\": \"隔離環境で変更内容を確認\"\n}",
+          "options": {
+            "raw": {
+              "language": "json"
+            }
+          }
+        }
+      },
+      "response": []
+    },
+    {
+      "name": "40. Leave League",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Authorization",
+            "value": "Bearer {{access_token}}"
+          },
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "url": "{{base_url}}/api/leagues/{{league_id}}/leave",
+        "description": "本人が脱退。ownerは同意による引継ぎが先。",
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"client_request_id\": \"{{client_request_id}}\"\n}",
+          "options": {
+            "raw": {
+              "language": "json"
+            }
+          }
+        }
+      },
+      "response": []
+    },
+    {
+      "name": "41. Current Owner Transfer",
+      "request": {
+        "method": "GET",
+        "header": [
+          {
+            "key": "Authorization",
+            "value": "Bearer {{access_token}}"
+          }
+        ],
+        "url": "{{base_url}}/api/leagues/{{league_id}}/owner-transfers/current",
+        "description": "運営と指名本人だけに現在の指名を返す。"
+      },
+      "response": []
+    },
+    {
+      "name": "42. Propose Owner Transfer",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Authorization",
+            "value": "Bearer {{access_token}}"
+          },
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "url": "{{base_url}}/api/leagues/{{league_id}}/owner-transfers",
+        "description": "ownerのみ。指名は7日有効。",
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"client_request_id\": \"{{client_request_id}}\",\n  \"to_user_id\": \"{{target_user_id}}\"\n}",
+          "options": {
+            "raw": {
+              "language": "json"
+            }
+          }
+        }
+      },
+      "response": []
+    },
+    {
+      "name": "43. Accept Owner Transfer",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Authorization",
+            "value": "Bearer {{access_token}}"
+          },
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "url": "{{base_url}}/api/leagues/{{league_id}}/owner-transfers/{{transfer_id}}/accept",
+        "description": "指名本人の同意。ownerと2人のroleが一括更新される。",
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"client_request_id\": \"{{client_request_id}}\",\n  \"version\": \"{{object_version}}\"\n}",
+          "options": {
+            "raw": {
+              "language": "json"
+            }
+          }
+        }
+      },
+      "response": []
+    },
+    {
+      "name": "44. Cancel Owner Transfer",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Authorization",
+            "value": "Bearer {{access_token}}"
+          },
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "url": "{{base_url}}/api/leagues/{{league_id}}/owner-transfers/{{transfer_id}}/cancel",
+        "description": "現ownerのみ。保留中の指名を取り消す。",
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"client_request_id\": \"{{client_request_id}}\",\n  \"version\": \"{{object_version}}\"\n}",
+          "options": {
+            "raw": {
+              "language": "json"
+            }
+          }
+        }
+      },
+      "response": []
+    },
+    {
+      "name": "45. Create Rule Version",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Authorization",
+            "value": "Bearer {{access_token}}"
+          },
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "url": "{{base_url}}/api/leagues/{{league_id}}/rules",
+        "description": "運営のみ。別IDのルールを作成。",
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"client_request_id\": \"{{client_request_id}}\",\n  \"name\": \"確認用新版\",\n  \"default_points\": 25000,\n  \"return_points\": 30000,\n  \"uma\": [\n    20,\n    10,\n    -10,\n    -20\n  ]\n}",
+          "options": {
+            "raw": {
+              "language": "json"
+            }
+          }
+        }
+      },
+      "response": []
+    },
+    {
+      "name": "46. Set Rule Availability",
+      "request": {
+        "method": "PATCH",
+        "header": [
+          {
+            "key": "Authorization",
+            "value": "Bearer {{access_token}}"
+          },
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "url": "{{base_url}}/api/leagues/{{league_id}}/rules/{{rule_id}}",
+        "description": "運営のみ。過去の計算条件は維持。",
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"client_request_id\": \"{{client_request_id}}\",\n  \"version\": \"{{object_version}}\",\n  \"available\": false\n}",
+          "options": {
+            "raw": {
+              "language": "json"
+            }
+          }
+        }
+      },
+      "response": []
+    },
+    {
+      "name": "47. Create Season",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Authorization",
+            "value": "Bearer {{access_token}}"
+          },
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "url": "{{base_url}}/api/leagues/{{league_id}}/seasons",
+        "description": "運営のみ。期間は任意。",
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"client_request_id\": \"{{client_request_id}}\",\n  \"name\": \"試験シーズン\",\n  \"start_date\": null,\n  \"end_date\": null\n}",
+          "options": {
+            "raw": {
+              "language": "json"
+            }
+          }
+        }
+      },
+      "response": []
+    },
+    {
+      "name": "48. Update Season",
+      "request": {
+        "method": "PATCH",
+        "header": [
+          {
+            "key": "Authorization",
+            "value": "Bearer {{access_token}}"
+          },
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "url": "{{base_url}}/api/leagues/{{league_id}}/seasons/{{season_id}}",
+        "description": "運営のみ。使用済み期間の変更は409。",
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"client_request_id\": \"{{client_request_id}}\",\n  \"version\": \"{{object_version}}\",\n  \"name\": \"更新したシーズン\",\n  \"start_date\": null,\n  \"end_date\": null\n}",
+          "options": {
+            "raw": {
+              "language": "json"
+            }
+          }
+        }
+      },
+      "response": []
+    },
+    {
+      "name": "49. Rename Guest",
+      "request": {
+        "method": "PATCH",
+        "header": [
+          {
+            "key": "Authorization",
+            "value": "Bearer {{access_token}}"
+          },
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "url": "{{base_url}}/api/leagues/{{league_id}}/guests/{{guest_user_id}}",
+        "description": "運営のみ。未紐付けゲストのみ。",
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"client_request_id\": \"{{client_request_id}}\",\n  \"version\": \"{{object_version}}\",\n  \"name\": \"更新したゲスト\"\n}",
+          "options": {
+            "raw": {
+              "language": "json"
+            }
+          }
+        }
+      },
+      "response": []
+    },
+    {
+      "name": "50. Revoke Participant Link",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Authorization",
+            "value": "Bearer {{access_token}}"
+          },
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "url": "{{base_url}}/api/leagues/{{league_id}}/participant-links/{{link_id}}/revoke",
+        "description": "ownerのみ。成績の集計先を元のゲストIDに戻し、対局結果を保持。",
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"client_request_id\": \"{{client_request_id}}\",\n  \"version\": \"{{link_version}}\",\n  \"reason\": \"隔離環境で変更内容を確認\"\n}",
+          "options": {
+            "raw": {
+              "language": "json"
+            }
+          }
+        }
+      },
+      "response": []
+    },
+    {
+      "name": "51. League Events",
+      "request": {
+        "method": "GET",
+        "header": [
+          {
+            "key": "Authorization",
+            "value": "Bearer {{access_token}}"
+          }
+        ],
+        "url": "{{base_url}}/api/leagues/{{league_id}}/events?limit=20",
+        "description": "運営のみ。操作履歴、理由と変更前後。"
       },
       "response": []
     }

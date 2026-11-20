@@ -1,6 +1,6 @@
 > 現行APIの確認順・変数・期待ステータスは [現在のPostman手順](README.md) を参照してください。
 
-以下は旧コレクションの記録です。Step 3の現行手順は [Postman README](README.md) にあります。
+以下は旧コレクションの記録です。Step 5の現行手順は [Postman README](README.md) にあります。
 
 # Postman を使った API テスト・ガイド
 

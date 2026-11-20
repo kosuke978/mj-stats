@@ -1,0 +1,17 @@
+$kind: http-request
+description: "運営のみ。期間は任意。"
+url: "{{base_url}}/api/leagues/{{league_id}}/seasons"
+method: POST
+headers:
+  Authorization: "Bearer {{access_token}}"
+  Content-Type: application/json
+body:
+  type: json
+  content: |
+    {
+      "client_request_id": "{{client_request_id}}",
+      "name": "試験シーズン",
+      "start_date": null,
+      "end_date": null
+    }
+order: 48000

@@ -18,6 +18,7 @@ const input = args.length ? readFileSync(args[1], 'utf8') : null
 const snapshot = input ? JSON.parse(input) : null
 const tables = ['users', 'leagues', 'league_members', 'seasons', 'rules', 'matches', 'match_results']
 const database = `mjstats_migration_${Date.now()}`
+const restoredDatabase = `${database}_restored`
 function sql(text, user = 'postgres', db = database) {
   return execFileSync('docker', ['exec', '-i', container, 'psql', '-X', '-A', '-t', '-U', user, '-d', db, '-v', 'ON_ERROR_STOP=1'], { input: '\\set VERBOSITY sqlstate\n' + text, encoding: 'utf8', stdio: ['pipe', 'pipe', 'pipe'] }).trim()
 }
@@ -34,6 +35,16 @@ function sameJSON(a, b) {
   const quote = value => "'" + JSON.stringify(value).replaceAll("'", "''") + "'::jsonb"
   return sql(`SELECT ${quote(a)} = ${quote(b)};`) === 't'
 }
+function normalizeDumpShape(rows) {
+  // PostgreSQL re-parses varchar arrays with per-element text casts on restore.
+  // Only normalize this equivalent expression spelling, keeping other schema fields exact.
+  const varcharArray = /\(ARRAY\[((?:'[^']+'::character varying(?:, )?)+)\]\)::text\[\]/g
+  return rows.map(row => Object.fromEntries(Object.entries(row).map(([key, value]) => [
+    key, typeof value === 'string'
+      ? value.replace(varcharArray, (_, items) => `ARRAY[${items.split(', ').map(item => `(${item})::text`).join(', ')}]`)
+      : value,
+  ])))
+}
 function projectionQuery(columns) {
   return `SELECT jsonb_build_object(${tables.map(t => {
     const row = `jsonb_build_object(${columns.filter(c => c.table_name === t).map(c => `'${c.column_name}',t.${c.column_name}`).join(',')})`
@@ -46,13 +57,15 @@ const historyCutover = '20261118003000_league_history_cutover.sql'
 const leagueCreationEvents = '20261118004000_league_creation_events.sql'
 const leagueInvites = '20261118005000_league_invites.sql'
 const leagueParticipation = '20261118006000_league_participation.sql'
-const step3Files = files.slice(files.indexOf(leagueParticipation) + 1)
+const managementStart = files.indexOf('20261119000000_match_management.sql')
+const step3Files = files.slice(files.indexOf(leagueParticipation) + 1, managementStart)
+const step5Files = files.slice(managementStart)
 const step22Files = files.slice(files.indexOf(leagueFoundation) + 1, files.indexOf(historyCutover))
 const migration = file => readFileSync(`supabase/migrations/${file}`, 'utf8')
 // Isolated acceptance ledger using the Supabase history shape. Exact SQL and
 // version/order are checked here; this is not a production migration runner.
-function verifyHistory(expected) {
-  const rows = JSON.parse(sql(`SELECT COALESCE(json_agg(h ORDER BY version),'[]') FROM supabase_migrations.schema_migrations h;`))
+function verifyHistory(expected, db = database) {
+  const rows = JSON.parse(sql(`SELECT COALESCE(json_agg(h ORDER BY version),'[]') FROM supabase_migrations.schema_migrations h;`, 'postgres', db))
   if (rows.length !== expected.length || rows.some((r, i) => r.version !== expected[i].split('_')[0] || r.statements.join('') !== migration(expected[i]))) throw new Error('Migration history mismatch')
 }
 function apply(file, applied) {
@@ -64,7 +77,7 @@ function apply(file, applied) {
   applied.push(file)
   verifyHistory(applied)
 }
-let created = false, stage = 'environment setup'
+let created = false, restored = false, stage = 'environment setup'
 try {
   sql(`CREATE DATABASE ${database} TEMPLATE template0;`, 'postgres', 'postgres'); created = true
   // Auth metadata contract only; actual Auth and locking are tested separately.
@@ -82,7 +95,7 @@ try {
   stage = 'empty full application'
   for (const file of files) apply(file, applied)
   const emptyShape = Object.fromEntries(Object.entries(queries).map(([name,q]) => [name, JSON.parse(sql(q))]))
-  const additionalTables = ['league_events', 'league_invites', 'api_rate_limits', 'participant_links', 'match_revisions']
+  const additionalTables = ['league_events', 'league_invites', 'api_rate_limits', 'participant_links', 'match_revisions', 'owner_transfers']
   const emptyAdditionalShapes = additionalTables.map(table => JSON.parse(sql(eventTableShape(table))))
   console.log('PASS empty database: all migrations + complete history applied as postgres')
   // Roll back this test-only schema rebuild in a disposable database, never the
@@ -244,20 +257,57 @@ try {
       AND final_point * final_point_denominator = final_point_numerator
       AND gcd(final_point_numerator,final_point_denominator::bigint)=1)
     FROM public.match_results`) !== 't') throw new Error('Backfilled points are not exact/reduced')
+  for (const file of step3Files) {
+    let rejected = false
+    try { sql(migration(file)) } catch { rejected = true }
+    if (!rejected || beforeStep3 !== sql(fullRowQuery)) throw new Error('Step 3 replay changed rows')
+  }
+  console.log('PASS Step 3 incremental schema and ledger; old IDs/values/references and legacy attribution preserved; exact reduced backfill; raw replay rejected')
+  stage = 'Step 3 exact recording constraints and permissions'
+  testExactMatches(sql, projectionQuery(JSON.parse(sql(queries.columns))))
+  stage = 'Step 5 management upgrade'
+  const beforeStep5Query = projectionQuery(JSON.parse(sql(queries.columns)))
+  const step5Snapshot = `SELECT jsonb_build_object(
+    'core', (${beforeStep5Query.slice(0,-1)}),
+    'links', (SELECT jsonb_agg(to_jsonb(p)-ARRAY['revoked_by','revoked_at','revoke_reason'] ORDER BY id) FROM public.participant_links p),
+    'revisions', (SELECT jsonb_agg(to_jsonb(r)-ARRAY['id','before','reason'] ORDER BY match_id,version) FROM public.match_revisions r),
+    'events', (SELECT jsonb_agg(to_jsonb(e)-ARRAY['before','reason'] ORDER BY id) FROM public.league_events e));`
+  const beforeStep5 = sql(step5Snapshot)
+  for (const file of step5Files) apply(file, applied)
+  if (sql(step5Snapshot) !== beforeStep5) throw new Error('Step 5 changed old rows or references')
   for (const [name, query] of Object.entries(queries)) {
     if (!sameJSON(emptyShape[name], JSON.parse(sql(query)))) throw new Error(`Empty/incremental ${name} differ`)
   }
   if (!sameJSON(emptyAdditionalShapes, additionalTables.map(table => JSON.parse(sql(eventTableShape(table)))))) {
     throw new Error('Empty/incremental supplemental schemas differ')
   }
-  for (const file of step3Files) {
+  for (const file of step5Files) {
     let rejected = false
     try { sql(migration(file)) } catch { rejected = true }
-    if (!rejected || beforeStep3 !== sql(fullRowQuery)) throw new Error('Step 3 replay changed rows')
+    if (!rejected || sql(step5Snapshot) !== beforeStep5) throw new Error('Step 5 replay changed rows')
   }
-  console.log('PASS Step 3 empty/incremental schema and ledger; old IDs/values/references and legacy attribution preserved; exact reduced backfill; raw replay rejected')
-  stage = 'Step 3 exact recording constraints and permissions'
-  testExactMatches(sql, projectionQuery(JSON.parse(sql(queries.columns))))
+  for (const role of ['anon', 'authenticated', 'service_role']) {
+    if (sql(`SELECT has_table_privilege('${role}','public.owner_transfers','SELECT,INSERT,UPDATE,DELETE')`) !== 'f') {
+      throw new Error('Owner transfers exposed to a public role')
+    }
+  }
+  console.log('PASS Step 5 empty/incremental schema and ledger; prior IDs/rows/references and snapshots unchanged; raw replay and public owner transfer access rejected')
+  stage = 'Step 5 isolated backup restore'
+  const dump = execFileSync('docker', ['exec', container, 'pg_dump', '-Fc', '-U', 'supabase_admin', '-d', database],
+    { stdio: ['ignore', 'pipe', 'pipe'] })
+  sql(`CREATE DATABASE ${restoredDatabase} TEMPLATE template0;`, 'postgres', 'postgres')
+  restored = true
+  execFileSync('docker', ['exec', '-i', container, 'pg_restore', '--exit-on-error', '-U', 'supabase_admin', '-d', restoredDatabase],
+    { input: dump, stdio: ['pipe', 'pipe', 'pipe'] })
+  verifyHistory(applied, restoredDatabase)
+  if (sql(step5Snapshot, 'postgres', restoredDatabase) !== beforeStep5) throw new Error('Backup restore changed old values')
+  for (const [name, query] of Object.entries(queries)) {
+    const restoredShape = JSON.parse(sql(query, 'postgres', restoredDatabase))
+    if (!sameJSON(normalizeDumpShape(emptyShape[name]), normalizeDumpShape(restoredShape))) {
+      throw new Error(`Restored ${name} differs`)
+    }
+  }
+  console.log('PASS isolated pg_dump/pg_restore: migration history, existing data and authorization schema matched')
   if (!snapshot) console.log('Actual-copy acceptance is separate: rerun with --snapshot <read-only-export.json>.')
 } catch (error) {
   // SQLSTATE only: never emit row values, query text or connection details.
@@ -266,5 +316,6 @@ try {
   console.error(`Migration test failed during ${stage}; row values and connection details withheld`)
   process.exitCode = 1
 } finally {
+  if (restored) sql(`DROP DATABASE ${restoredDatabase} WITH (FORCE);`, 'postgres', 'postgres')
   if (created) sql(`DROP DATABASE ${database} WITH (FORCE);`, 'postgres', 'postgres')
 }
