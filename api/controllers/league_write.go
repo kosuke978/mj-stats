@@ -109,7 +109,7 @@ func requestConflict(c *gin.Context) {
 	httpx.Error(c, 409, "IDEMPOTENCY_CONFLICT", "操作IDが別の入力で使用されています", nil)
 }
 
-func replayLeagueEvent(c *gin.Context, ctx context.Context, tx *sql.Tx, actor, operation, id, hash string) (string, bool) {
+func replayLeagueEvent(c *gin.Context, ctx context.Context, tx *sql.Tx, actor, operation, id string, hashes ...string) (string, bool) {
 	// Events have an actor-wide key. Serialize it even across different leagues.
 	if _, err := tx.ExecContext(ctx, `SELECT pg_advisory_xact_lock(
 		hashtextextended($1 || ':' || $2 || ':' || $3,0))`, operation, actor, id); err != nil {
@@ -124,10 +124,13 @@ func replayLeagueEvent(c *gin.Context, ctx context.Context, tx *sql.Tx, actor, o
 		return "", true
 	case err != nil:
 		httpx.Unavailable(c)
-	case previousHash != hash:
-		requestConflict(c)
 	default:
-		return target, true
+		for _, hash := range hashes {
+			if hash != "" && previousHash == hash {
+				return target, true
+			}
+		}
+		requestConflict(c)
 	}
 	return "", false
 }

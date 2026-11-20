@@ -1,5 +1,5 @@
 $kind: http-request
-description: "運営のみ。使用済み期間の変更は409。"
+description: "運営のみ。名前だけの更新は期間を維持。片方の日付を送ると既存のもう片方と検証し、nullを送った日付だけを解除。使用済みの期間の変更・解除と版競合は409。同じ操作ID・本文の再送は200。"
 url: "{{base_url}}/api/leagues/{{league_id}}/seasons/{{season_id}}"
 method: PATCH
 headers:
@@ -11,8 +11,6 @@ body:
     {
       "client_request_id": "{{client_request_id}}",
       "version": "{{object_version}}",
-      "name": "更新したシーズン",
-      "start_date": null,
-      "end_date": null
+      "name": "更新したシーズン"
     }
 order: 49000

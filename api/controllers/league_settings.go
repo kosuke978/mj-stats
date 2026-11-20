@@ -140,19 +140,25 @@ func (w *LeagueWrite) SetRuleAvailability(c *gin.Context) {
 }
 
 type seasonSettings struct {
-	Name    string  `json:"name"`
-	Start   *string `json:"start_date"`
-	End     *string `json:"end_date"`
-	Version string  `json:"version,omitempty"`
-	ID      string  `json:"client_request_id"`
+	Name    json.RawMessage `json:"name"`
+	Start   json.RawMessage `json:"start_date"`
+	End     json.RawMessage `json:"end_date"`
+	Version string          `json:"version,omitempty"`
+	ID      string          `json:"client_request_id"`
 }
 
-func validSeasonDate(date *string) bool {
-	if date == nil {
-		return true
+func seasonDate(raw json.RawMessage) (*string, bool) {
+	var date *string
+	if raw != nil && json.Unmarshal(raw, &date) != nil {
+		return nil, false
 	}
-	t, err := time.Parse(time.DateOnly, *date)
-	return err == nil && t.Year() > 0
+	if date != nil {
+		t, err := time.Parse(time.DateOnly, *date)
+		if err != nil || t.Year() < 1 {
+			return nil, false
+		}
+	}
+	return date, true
 }
 
 func (w *LeagueWrite) SaveSeason(edit bool) gin.HandlerFunc {
@@ -161,30 +167,51 @@ func (w *LeagueWrite) SaveSeason(edit bool) gin.HandlerFunc {
 		if !httpx.Decode(c, &input) {
 			return
 		}
-		name, err := models.NormalizeLeagueName(input.Name)
-		if err != nil || !validSeasonDate(input.Start) || !validSeasonDate(input.End) ||
-			(input.Start != nil && input.End != nil && *input.Start > *input.End) {
+		var name *string
+		if input.Name != nil {
+			var value string
+			if json.Unmarshal(input.Name, &value) != nil {
+				httpx.Invalid(c)
+				return
+			}
+			value, err := models.NormalizeLeagueName(value)
+			if err != nil {
+				httpx.Invalid(c)
+				return
+			}
+			name = &value
+		}
+		start, validStart := seasonDate(input.Start)
+		end, validEnd := seasonDate(input.End)
+		if !validStart || !validEnd || (name == nil && (!edit || input.Start == nil && input.End == nil)) ||
+			(start != nil && end != nil && *start > *end) {
 			httpx.Invalid(c)
 			return
 		}
-		id, operation := c.Param("id"), "season.create"
+		cmd := managementCommand{operation: "season.create", requestID: input.ID,
+			target: c.Param("id"), version: input.Version, managerOnly: true, payload: []any{name, start, end}}
 		if edit {
-			operation = "season.update"
-			if !normalizeUUID(c, &id, "id") || !normalizeVersion(c, input.Version) {
+			cmd.operation = "season.update"
+			if !normalizeUUID(c, &cmd.target, "id") || !normalizeVersion(c, input.Version) {
 				return
 			}
+			// Older writes normalized omission and null to the same hash.
+			// Replay those writes without applying the patch under the new rules.
+			if name != nil {
+				cmd.legacyPayload = cmd.payload
+			}
+			cmd.payload = []any{name, start, end, input.Start != nil, input.End != nil}
 		} else if input.Version != "" {
 			invalidQuery(c, "version")
 			return
 		}
-		w.manage(c, managementCommand{operation: operation, requestID: input.ID, target: id, version: input.Version,
-			managerOnly: true, payload: []any{name, input.Start, input.End}}, func(ctx context.Context, tx *sql.Tx, l league, _ string) *managementChange {
+		w.manage(c, cmd, func(ctx context.Context, tx *sql.Tx, l league, _ string) *managementChange {
 			const record = `json_build_object('id',id,'name',name,'start_date',start_date,'end_date',end_date,'version',version::text)`
 			if !edit {
 				var result managementChange
 				var data json.RawMessage
 				err := tx.QueryRowContext(ctx, `INSERT INTO public.seasons(league_id,name,start_date,end_date)
-					VALUES ($1,$2,$3,$4) RETURNING id,version::text,`+record, l.ID, name, input.Start, input.End).
+					VALUES ($1,$2,$3,$4) RETURNING id,version::text,`+record, l.ID, name, start, end).
 					Scan(&result.id, &result.version, &data)
 				if err != nil {
 					httpx.Unavailable(c)
@@ -195,13 +222,19 @@ func (w *LeagueWrite) SaveSeason(edit bool) gin.HandlerFunc {
 			}
 			var version string
 			var before, after json.RawMessage
-			var referencedPeriodChange bool
+			var referencedPeriodChange, invalidPeriod bool
+			var mergedStart, mergedEnd *string
 			err := tx.QueryRowContext(ctx, `SELECT version::text,`+record+`,
-				(start_date IS DISTINCT FROM $3::date OR end_date IS DISTINCT FROM $4::date) AND (
+				(start_date IS DISTINCT FROM next_start OR end_date IS DISTINCT FROM next_end) AND (
 					EXISTS(SELECT 1 FROM public.matches m WHERE m.league_id=$1 AND m.season_id=$2)
 					OR EXISTS(SELECT 1 FROM public.match_revisions r WHERE r.league_id=$1
-						AND (r.before->>'season_id'=$2::text OR r.after->>'season_id'=$2::text)))
-				FROM public.seasons WHERE league_id=$1 AND id=$2::uuid`, l.ID, id, input.Start, input.End).Scan(&version, &before, &referencedPeriodChange)
+						AND (r.before->>'season_id'=$2::text OR r.after->>'season_id'=$2::text))),
+				COALESCE(next_start > next_end, false), next_start::text, next_end::text
+				FROM public.seasons CROSS JOIN LATERAL (
+					SELECT CASE WHEN $3 THEN $4::date ELSE start_date END AS next_start,
+						CASE WHEN $5 THEN $6::date ELSE end_date END AS next_end
+				) AS patch WHERE league_id=$1 AND id=$2::uuid`, l.ID, cmd.target, input.Start != nil, start, input.End != nil, end).
+				Scan(&version, &before, &referencedPeriodChange, &invalidPeriod, &mergedStart, &mergedEnd)
 			if !managementFound(c, err) || !checkVersion(c, version, input.Version) {
 				return nil
 			}
@@ -209,13 +242,17 @@ func (w *LeagueWrite) SaveSeason(edit bool) gin.HandlerFunc {
 				stateConflict(c, "対局に使用したシーズンの期間は変更できません")
 				return nil
 			}
-			err = tx.QueryRowContext(ctx, `UPDATE public.seasons SET name=$3,start_date=$4,end_date=$5,version=version+1
-				WHERE league_id=$1 AND id=$2 RETURNING version::text,`+record, l.ID, id, name, input.Start, input.End).Scan(&version, &after)
+			if invalidPeriod {
+				httpx.Invalid(c)
+				return nil
+			}
+			err = tx.QueryRowContext(ctx, `UPDATE public.seasons SET name=COALESCE($3,name),start_date=$4,end_date=$5,version=version+1
+				WHERE league_id=$1 AND id=$2 RETURNING version::text,`+record, l.ID, cmd.target, name, mergedStart, mergedEnd).Scan(&version, &after)
 			if err != nil {
 				httpx.Unavailable(c)
 				return nil
 			}
-			return &managementChange{id: id, version: version, before: before, after: after}
+			return &managementChange{id: cmd.target, version: version, before: before, after: after}
 		})
 	}
 }

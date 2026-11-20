@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"crypto/sha256"
 	"database/sql"
 	"encoding/json"
 	"fmt"
@@ -130,6 +131,43 @@ func testStep5(t *testing.T, ctx context.Context, admin *sql.DB, call apiCall, o
 	}
 	seasonChange := map[string]any{"client_request_id": uid(), "name": "Q20 season empty (edited)", "version": "1", "start_date": "2020-01-01"}
 	verify("PATCH", root+"/seasons/"+empty, adminToken, seasonChange, 200, "")
+	seasonPath := root + "/seasons/" + empty
+	seasonRange := func(id string) string {
+		return row(`SELECT name||'|'||COALESCE(start_date::text,'-')||'|'||COALESCE(end_date::text,'-')
+			FROM public.seasons WHERE id=$1`, id)
+	}
+	endOnly := map[string]any{"client_request_id": uid(), "version": "2", "end_date": "2019-12-31"}
+	verify("PATCH", seasonPath, adminToken, endOnly, 400, "INVALID_INPUT")
+	endOnly["end_date"] = "2020-12-31"
+	verify("PATCH", seasonPath, adminToken, endOnly, 200, "")
+	startOnly := map[string]any{"client_request_id": uid(), "version": "3", "start_date": "2021-01-01"}
+	verify("PATCH", seasonPath, adminToken, startOnly, 400, "INVALID_INPUT")
+	if got := seasonRange(empty); got != "Q20 season empty (edited)|2020-01-01|2020-12-31" {
+		t.Fatalf("one-sided season date patch: %s", got)
+	}
+	startOnly["start_date"] = nil
+	verify("PATCH", seasonPath, adminToken, startOnly, 200, "")
+	if got := seasonRange(empty); got != "Q20 season empty (edited)|-|2020-12-31" {
+		t.Fatalf("explicit null must clear only the supplied date: %s", got)
+	}
+	if result := verify("PATCH", seasonPath, adminToken, endOnly, 200, ""); result["version"] != "3" {
+		t.Fatal("replay should return the originally applied version")
+	}
+	endOnly["start_date"] = nil
+	verify("PATCH", seasonPath, adminToken, endOnly, 409, "IDEMPOTENCY_CONFLICT")
+	// Simulate a pre-fix audit event whose hash did not distinguish omission and null.
+	legacyID := seasonChange["client_request_id"]
+	legacyBody, err := json.Marshal([]any{f.a, empty, "1", "", []any{seasonChange["name"], "2020-01-01", nil}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	exec(`UPDATE public.league_events SET request_hash=$2 WHERE client_request_id=$1`, legacyID, fmt.Sprintf("%x", sha256.Sum256(legacyBody)))
+	if result := verify("PATCH", seasonPath, adminToken, seasonChange, 200, ""); result["version"] != "2" {
+		t.Fatal("pre-fix season replay must preserve the applied version")
+	}
+	if got := seasonRange(empty); got != "Q20 season empty (edited)|-|2020-12-31" {
+		t.Fatalf("replay must leave the latest season period intact: %s", got)
+	}
 	rule := verify("POST", root+"/rules", adminToken, map[string]any{"client_request_id": uid(), "name": "Q18 new rule", "default_points": 25000,
 		"return_points": 30000, "uma": []int{20, 10, -10, -20}}, 201, "")["id"].(string)
 	verify("PATCH", root+"/rules/"+rule, adminToken, map[string]any{"client_request_id": uid(), "available": false, "version": "1"}, 200, "")
@@ -193,6 +231,17 @@ func testStep5(t *testing.T, ctx context.Context, admin *sql.DB, call apiCall, o
 	seasonChange["version"] = "1"
 	seasonChange["client_request_id"] = uid()
 	verify("PATCH", root+"/seasons/"+f.season, adminToken, seasonChange, 409, "STATE_CONFLICT")
+	usedPath := root + "/seasons/" + f.season
+	usedDates := row(`SELECT COALESCE(start_date::text,'-')||'|'||end_date::text FROM public.seasons WHERE id=$1`, f.season)
+	rename := map[string]any{"client_request_id": uid(), "name": "対局に使用したシーズン", "version": "1"}
+	verify("PATCH", usedPath, adminToken, rename, 200, "")
+	verify("PATCH", usedPath, adminToken, rename, 200, "")
+	if got := seasonRange(f.season); got != "対局に使用したシーズン|"+usedDates {
+		t.Fatalf("rename must keep the used range: %s", got)
+	}
+	verify("PATCH", usedPath, adminToken, map[string]any{"client_request_id": uid(), "version": "1", "name": "旧版"}, 409, "VERSION_CONFLICT")
+	verify("PATCH", usedPath, adminToken, map[string]any{"client_request_id": uid(), "version": "2", "end_date": nil}, 409, "STATE_CONFLICT")
+	t.Log("Season PATCH: partial dates, null, name-only on a used season, used-date conflict, stale version, replay and legacy operation hash")
 	t.Log("Q-20 exact fixtures: all=799/30,199/30,199/30,-399/10 (3 each); S1, S2 and unassigned verified; cancelled results retained")
 
 	edit := makeMatch(guests[:4], []int{35000, 35000, 20000, 10000}, f.season)
