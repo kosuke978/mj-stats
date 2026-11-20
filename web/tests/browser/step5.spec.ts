@@ -57,7 +57,7 @@ test("Q-15/Q-18/Q-20/Q-24/Q-26: ranking and management from league home", async 
   }
 
   const disposable = await browser.newContext()
-  const memberPage = await disposable.newPage()
+  let memberPage = await disposable.newPage()
   try {
     const owner = await person("順位表 オーナー")
     const player = await person("順位表 メンバー")
@@ -99,8 +99,11 @@ test("Q-15/Q-18/Q-20/Q-24/Q-26: ranking and management from league home", async 
     await memberPage.goto(home + "/settings")
     await expect(memberPage.getByRole("main").getByRole("alert")).toContainText("閲覧する権限がありません")
     await memberPage.goto(detail)
+    await expect(memberPage.getByRole("heading", { name: "対局詳細", exact: true })).toBeVisible()
     await expect(memberPage.getByRole("link", { name: "訂正・取消" })).toHaveCount(0)
+    await memberPage.close()
 
+    await page.bringToFront()
     await page.goto(home)
     await login(page, owner)
     await expect(page).toHaveURL(home)
@@ -108,9 +111,12 @@ test("Q-15/Q-18/Q-20/Q-24/Q-26: ranking and management from league home", async 
     await expect(page.getByText("1位 試験ゲストA（ゲスト）")).toBeVisible()
     await expect(page.getByText("+50 pt · 1対局")).toBeVisible()
     await page.getByRole("link", { name: "対局履歴", exact: true }).click()
+    await expect(page).toHaveURL(history)
+    await expect(page.getByRole("heading", { name: "順位表の試験リーグの対局履歴" })).toBeVisible()
     await page.getByRole("link", { name: "対局詳細" }).click()
+    await expect(page).toHaveURL(detail)
     await page.getByRole("link", { name: "訂正・取消" }).click()
-    await page.bringToFront()
+    await expect(page).toHaveURL(detail + "/edit")
     await expect(page.getByRole("heading", { name: "対局の訂正・取消" })).toBeVisible()
     await page.setViewportSize({ width: 360, height: 800 })
     await page.locator("html").evaluate((el) => el.style.fontSize = "200%")
@@ -225,11 +231,14 @@ test("Q-15/Q-18/Q-20/Q-24/Q-26: ranking and management from league home", async 
     await page.getByRole("combobox", { name: "引継ぎ相手", exact: true }).selectOption(player.id)
     await page.getByRole("button", { name: "引継ぎ相手を指名" }).click()
     await expect(page.getByText("順位表 メンバー の同意を待っています。")).toBeVisible()
+    memberPage = await disposable.newPage()
+    await memberPage.bringToFront()
     await memberPage.goto(home)
     await memberPage.getByLabel("このリーグのオーナーを引き継ぐことに同意します").check()
     await memberPage.getByRole("button", { name: "同意して引き継ぐ" }).click()
     await expect(memberPage.getByText("オーナー", { exact: true })).toBeVisible()
 
+    await page.bringToFront()
     await page.goto(home)
     await page.getByText("リーグから脱退", { exact: true }).click()
     await page.getByLabel("脱退することを確認しました").check()
@@ -245,6 +254,8 @@ test("Q-15/Q-18/Q-20/Q-24/Q-26: ranking and management from league home", async 
       const phone = await touch.newPage()
       await phone.goto(home)
       await phone.getByRole("link", { name: "順位表", exact: true }).tap()
+      await expect(phone).toHaveURL(home + "/ranking")
+      await expect(phone.getByRole("heading", { name: "順位表", exact: true })).toBeVisible()
       for (const [width, height] of [[360, 800], [390, 844], [768, 1024], [1280, 900], [844, 390]]) {
         await phone.setViewportSize({ width, height })
         for (const path of [home + "/ranking", home + "/settings"]) {
